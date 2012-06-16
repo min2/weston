@@ -94,7 +94,7 @@ WL_EXPORT int
 weston_log(const char *fmt, ...)
 {
 	int l;
-	va_list argp;
+	va_list argp = NULL;
 	va_start(argp, fmt);
 	l = weston_log_timestamp();
 	l += vfprintf(weston_logfile, fmt, argp);
@@ -106,7 +106,7 @@ WL_EXPORT int
 weston_log_continue(const char *fmt, ...)
 {
 	int l;
-	va_list argp;
+	va_list argp = NULL;
 	va_start(argp, fmt);
 	l = vfprintf(weston_logfile, fmt, argp);
 	va_end(argp);

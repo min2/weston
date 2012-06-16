@@ -253,6 +253,8 @@ clipboard_create(struct weston_seat *seat)
 		return NULL;
 	memset(clipboard, 0, sizeof *clipboard);
 
+	memset(clipboard, 0, sizeof *clipboard);
+
 	clipboard->seat = seat;
 	clipboard->selection_listener.notify = clipboard_set_selection;
 
