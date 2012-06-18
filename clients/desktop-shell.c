@@ -99,6 +99,8 @@ struct panel_clock {
 	struct panel *panel;
 	struct task clock_task;
 	int clock_fd;
+	char *time_format;
+	unsigned int interval;
 };
 
 struct unlock_dialog {
@@ -116,7 +118,9 @@ static uint32_t key_panel_color = 0xaa000000;
 static uint32_t key_background_color = 0xff002244;
 static char *key_launcher_icon;
 static char *key_launcher_path;
+static char *key_clock_format = NULL;
 static void launcher_section_done(void *data);
+static void clock_section_done(void *data);
 static int key_locking = 1;
 
 static const struct config_key shell_config_keys[] = {
@@ -132,12 +136,19 @@ static const struct config_key launcher_config_keys[] = {
 	{ "path", CONFIG_KEY_STRING, &key_launcher_path },
 };
 
+static const struct config_key clock_config_keys[] = {
+	{ "format", CONFIG_KEY_STRING, &key_clock_format },
+};
+
 static const struct config_section config_sections[] = {
 	{ "shell",
 	  shell_config_keys, ARRAY_LENGTH(shell_config_keys) },
 	{ "launcher",
 	  launcher_config_keys, ARRAY_LENGTH(launcher_config_keys),
-	  launcher_section_done }
+	  launcher_section_done },
+	{ "clock",
+	  clock_config_keys, ARRAY_LENGTH(clock_config_keys),
+	  clock_section_done }
 };
 
 static void
@@ -315,13 +326,15 @@ panel_clock_redraw_handler(struct widget *widget, void *data)
 	struct rectangle allocation;
 	cairo_text_extents_t extents;
 	cairo_font_extents_t font_extents;
-	time_t rawtime;
 	struct tm * timeinfo;
+	struct timeval tv;
 	char string[128];
 
-	time(&rawtime);
-	timeinfo = localtime(&rawtime);
-	strftime(string, sizeof string, "%a %b %d, %I:%M %p", timeinfo);
+	gettimeofday(&tv, NULL);
+
+	timeinfo = localtime(&tv.tv_sec);
+
+	strftime(string, sizeof string, clock->time_format, timeinfo);
 
 	widget_get_allocation(widget, &allocation);
 	if (allocation.width == 0)
@@ -351,11 +364,11 @@ clock_timer_reset(struct panel_clock *clock)
 {
 	struct itimerspec its;
 
-	its.it_interval.tv_sec = 60;
+	its.it_interval.tv_sec = clock->interval;
 	its.it_interval.tv_nsec = 0;
-	its.it_value.tv_sec = 60;
+	its.it_value.tv_sec = clock->interval;
 	its.it_value.tv_nsec = 0;
-	if (timerfd_settime(clock->clock_fd, 0, &its, NULL) < 0) {
+	if (timerfd_settime(clock->clock_fd, TFD_TIMER_ABSTIME, &its, NULL) < 0) {
 		fprintf(stderr, "could not set timerfd\n: %m");
 		return -1;
 	}
@@ -363,13 +376,15 @@ clock_timer_reset(struct panel_clock *clock)
 	return 0;
 }
 
+static char *clock_default_time_format = "%a %b %d, %I:%M:%S %p";
+
 static void
 panel_add_clock(struct panel *panel)
 {
 	struct panel_clock *clock;
 	int timerfd;
 
-	timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
+	timerfd = timerfd_create(CLOCK_REALTIME, TFD_CLOEXEC);
 	if (timerfd < 0) {
 		fprintf(stderr, "could not create timerfd\n: %m");
 		return;
@@ -380,6 +395,8 @@ panel_add_clock(struct panel *panel)
 	clock->panel = panel;
 	panel->clock = clock;
 	clock->clock_fd = timerfd;
+	clock->time_format = clock_default_time_format;
+	clock->interval = 60;
 
 	clock->clock_task.run = clock_func;
 	display_watch_fd(window_get_display(panel->window), clock->clock_fd,
@@ -891,6 +908,35 @@ launcher_section_done(void *data)
 	key_launcher_icon = NULL;
 	free(key_launcher_path);
 	key_launcher_path = NULL;
+}
+
+static void
+clock_section_done(void *data)
+{
+	struct desktop *desktop = data;
+	struct output *output;
+
+	char * new_format = malloc ((strlen(key_clock_format) + 2) * sizeof(char));
+	if (new_format == NULL)
+		return;
+	sprintf(new_format, "%s", key_clock_format);
+
+	wl_list_for_each(output, &desktop->outputs, link) {
+		struct panel_clock *clock = output->panel->clock;
+		clock->time_format = new_format;
+
+#define CONTAINS(X) (strstr(new_format, X) != NULL)
+		if (CONTAINS("%S") || CONTAINS("%s") || CONTAINS("%T"))
+#undef CONTAINS
+			clock->interval = 1;
+		else
+			clock->interval = 60;
+
+		clock_timer_reset(clock);
+	}
+
+	free(key_clock_format);
+	key_clock_format = NULL;
 }
 
 static void
