@@ -3394,6 +3394,8 @@ int main(int argc, char *argv[])
 	else
 		ret = EXIT_FAILURE;
 
+	weston_log("wl_display_run() stopped\n");
+
 	/* prevent further rendering while shutting down */
 	ec->state = WESTON_COMPOSITOR_SLEEPING;
 
