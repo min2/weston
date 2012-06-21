@@ -30,6 +30,7 @@
 #include <math.h>
 #include <cairo.h>
 #include "cairo-util.h"
+#include <pango/pangocairo.h>
 
 #include "../shared/config-parser.h"
 
@@ -380,7 +381,7 @@ theme_render_frame(struct theme *t,
 	cairo_text_extents_t extents;
 	cairo_font_extents_t font_extents;
 	cairo_surface_t *source;
-	int x, y;
+	int x, y, text_width, text_height;
 
 	cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
 	cairo_set_source_rgba(cr, 0, 0, 0, 0);
@@ -401,31 +402,37 @@ theme_render_frame(struct theme *t,
 		    width - t->margin * 2, height - t->margin * 2,
 		    t->width, t->titlebar_height);
 
+	PangoFontDescription *font_d = pango_font_description_new ();
+	pango_font_description_set_family (font_d, "sans");
+	pango_font_description_set_weight (font_d, PANGO_WEIGHT_BOLD);
+	pango_font_description_set_absolute_size (font_d, 14 * PANGO_SCALE);
+
+	PangoLayout *layout = pango_cairo_create_layout(cr);
+	pango_layout_set_font_description(layout, font_d);
+	pango_layout_set_text(layout, title, -1);
+
+	pango_layout_get_size (layout, &text_width, &text_height);
+
+	x = (width - (double)text_width / PANGO_SCALE) / 2;
+	y = t->margin + t->width;
+
 	cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-	cairo_select_font_face(cr, "sans",
-			       CAIRO_FONT_SLANT_NORMAL,
-			       CAIRO_FONT_WEIGHT_BOLD);
-	cairo_set_font_size(cr, 14);
-	cairo_text_extents(cr, title, &extents);
-	cairo_font_extents (cr, &font_extents);
-	x = (width - extents.width) / 2;
-	y = t->margin +
-		(t->titlebar_height -
-		 font_extents.ascent - font_extents.descent) / 2 +
-		font_extents.ascent;
 
 	if (flags & THEME_FRAME_ACTIVE) {
 		cairo_move_to(cr, x + 1, y  + 1);
 		cairo_set_source_rgb(cr, 1, 1, 1);
-		cairo_show_text(cr, title);
+		pango_cairo_show_layout(cr, layout);
 		cairo_move_to(cr, x, y);
 		cairo_set_source_rgb(cr, 0, 0, 0);
-		cairo_show_text(cr, title);
+		pango_cairo_show_layout(cr, layout);
 	} else {
 		cairo_move_to(cr, x, y);
 		cairo_set_source_rgb(cr, 0.4, 0.4, 0.4);
-		cairo_show_text(cr, title);
+		pango_cairo_show_layout(cr, layout);
 	}
+
+	pango_font_description_free(font_d);
+	g_object_unref(layout);
 }
 
 enum theme_location
