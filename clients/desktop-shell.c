@@ -99,6 +99,7 @@ struct panel_clock {
 	struct panel *panel;
 	struct task clock_task;
 	int clock_fd;
+	int run;
 	char *time_format;
 	unsigned int interval;
 };
@@ -364,9 +365,9 @@ clock_timer_reset(struct panel_clock *clock)
 {
 	struct itimerspec its;
 
-	its.it_interval.tv_sec = clock->interval;
+	its.it_interval.tv_sec = clock->run ? clock->interval : 0;
 	its.it_interval.tv_nsec = 0;
-	its.it_value.tv_sec = clock->interval;
+	its.it_value.tv_sec =  clock->run ? clock->interval : 0;
 	its.it_value.tv_nsec = 0;
 	if (timerfd_settime(clock->clock_fd, TFD_TIMER_ABSTIME, &its, NULL) < 0) {
 		fprintf(stderr, "could not set timerfd\n: %m");
@@ -374,6 +375,20 @@ clock_timer_reset(struct panel_clock *clock)
 	}
 
 	return 0;
+}
+
+static void
+clock_start(struct panel_clock *clock)
+{
+	clock->run = 1;
+	clock_timer_reset(clock);
+}
+
+static void
+clock_stop(struct panel_clock *clock)
+{
+	clock->run = 0;
+	clock_timer_reset(clock);
 }
 
 static char *clock_default_time_format = "%a %b %d, %I:%M:%S %p";
@@ -397,11 +412,12 @@ panel_add_clock(struct panel *panel)
 	clock->clock_fd = timerfd;
 	clock->time_format = clock_default_time_format;
 	clock->interval = 60;
+	clock->run = 0;
 
 	clock->clock_task.run = clock_func;
 	display_watch_fd(window_get_display(panel->window), clock->clock_fd,
 			 EPOLLIN, &clock->clock_task);
-	clock_timer_reset(clock);
+	clock_stop(clock);
 
 	clock->widget = widget_add_widget(panel->widget, clock);
 	widget_set_redraw_handler(clock->widget, panel_clock_redraw_handler);
@@ -439,9 +455,11 @@ panel_resize_handler(struct widget *widget,
 	h=20;
 	w=170;
 
-	if (panel->clock)
+	if (panel->clock) {
 		widget_set_allocation(panel->clock->widget,
 				      width - w - 8, y - h / 2, w + 1, h + 1);
+		clock_start(panel->clock);
+	}
 }
 
 static void
