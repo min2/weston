@@ -54,6 +54,7 @@ clients_programs =				\
 	clickdot				\
 	editor					\
 	keyboard				\
+	tabs					\
 	$(full_gl_client_programs)
 
 desktop_shell = weston-desktop-shell
@@ -99,6 +100,9 @@ eventdemo_LDADD = $(toolkit_libs)
 
 clickdot_SOURCES = clickdot.c
 clickdot_LDADD = $(toolkit_libs)
+
+tabs_SOURCES = tabs.c
+tabs_LDADD = $(toolkit_libs)
 
 editor_SOURCES = 				\
 	editor.c				\
