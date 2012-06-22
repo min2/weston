@@ -3744,6 +3744,12 @@ display_watch_fd(struct display *display,
 }
 
 void
+display_flush(struct display *display)
+{
+	wl_display_flush(display->display);
+}
+
+void
 display_run(struct display *display)
 {
 	struct task *task;

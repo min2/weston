@@ -135,6 +135,9 @@ display_watch_fd(struct display *display,
 		 int fd, uint32_t events, struct task *task);
 
 void
+display_flush(struct display *d);
+
+void
 display_run(struct display *d);
 
 void

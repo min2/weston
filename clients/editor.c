@@ -79,6 +79,8 @@ text_entry_create(struct editor *editor, const char *text)
 	struct wl_surface *surface;
 
 	entry = malloc(sizeof *entry);
+	if (entry == NULL)
+		return NULL;
 
 	surface = window_get_wl_surface(editor->window);
 
@@ -89,14 +91,6 @@ text_entry_create(struct editor *editor, const char *text)
 	text_model_add_listener(entry->model, &text_model_listener, entry);
 
 	return entry;
-}
-
-static void
-text_entry_destroy(struct text_entry *entry)
-{
-	text_model_destroy(entry->model);
-	free(entry->text);
-	free(entry);
 }
 
 static void
@@ -214,6 +208,17 @@ text_entry_deactivate(struct text_entry *entry)
 }
 
 static void
+text_entry_destroy(struct text_entry *entry)
+{
+	if (entry != NULL) {
+		text_entry_deactivate(entry);
+		text_model_destroy(entry->model);
+		free(entry->text);
+	}
+	free(entry);
+}
+
+static void
 button_handler(struct widget *widget,
 	       struct input *input, uint32_t time,
 	       uint32_t button,
@@ -296,6 +301,8 @@ main(int argc, char *argv[])
 
 	text_entry_destroy(editor.entry);
 	text_entry_destroy(editor.editor);
+
+	display_flush(editor.display);
 
 	return 0;
 }
