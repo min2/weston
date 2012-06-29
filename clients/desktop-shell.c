@@ -618,9 +618,7 @@ iconlayer_resize_handler(struct widget *widget,
 
 	x = 10;
 	y = 16;
-	h = 600;
-	w = 1300;
-	widget_set_allocation(iconlayer->widget, x, y, w + 1, h + 1);
+	widget_set_allocation(iconlayer->widget, x, y, width, height);
 	window_schedule_redraw(iconlayer->window);
 }
 
@@ -758,8 +756,6 @@ iconlayer_create(struct desktop *desktop)
 		icon_create(iconlayer, iconlayer->image[q % 9],
 				(rand() & 63) * 16, (rand() & 31) * 16);
 	}
-
-	window_schedule_resize(iconlayer->window, 1000, 800);
 
 	return iconlayer;
 }
