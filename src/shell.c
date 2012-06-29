@@ -2059,7 +2059,8 @@ static const struct desktop_shell_interface desktop_shell_implementation = {
 	desktop_shell_set_panel,
 	desktop_shell_set_lock_surface,
 	desktop_shell_unlock,
-	desktop_shell_set_grab_surface
+	desktop_shell_set_grab_surface,
+	desktop_shell_set_iconlayer
 };
 
 static enum shell_surface_type
@@ -3339,7 +3340,8 @@ shell_init(struct weston_compositor *ec)
 
 	weston_layer_init(&shell->fullscreen_layer, &ec->cursor_layer.link);
 	weston_layer_init(&shell->panel_layer, &shell->fullscreen_layer.link);
-	weston_layer_init(&shell->background_layer, &shell->panel_layer.link);
+	weston_layer_init(&shell->iconlayer_layer, &shell->panel_layer.link);
+	weston_layer_init(&shell->background_layer, &shell->iconlayer_layer.link);
 	weston_layer_init(&shell->lock_layer, NULL);
 
 	wl_array_init(&shell->workspaces.array);

@@ -416,7 +416,8 @@ iconlayer_redraw_handler(struct widget *widget, void *data)
 	struct rectangle *relative = &iconlayer->mouse_selection_relative_size;
 	surface = window_get_surface(iconlayer->window);
 	cr = cairo_create(surface);
-	set_hex_color(cr, 0xFFC09060);
+	cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+	set_hex_color(cr, 0x00FFFFFF);
 	cairo_paint(cr);
 	cairo_fill(cr);
 
@@ -1232,11 +1233,13 @@ int main(int argc, char *argv[])
 					output->output, surface);
 
 		output->background = background_create(&desktop);
+		surface = window_get_wl_surface(output->background->window);
+		desktop_shell_set_background(desktop.shell,
+					     output->output, surface);
 
 		output->iconlayer = iconlayer_create(&desktop);
 		surface = window_get_wl_surface(output->iconlayer->window);
-		
-		desktop_shell_set_background(desktop.shell,
+		desktop_shell_set_iconlayer(desktop.shell,
 					     output->output, surface);
 	}
 
