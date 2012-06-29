@@ -71,6 +71,26 @@ struct panel {
 	struct panel_clock *clock;
 };
 
+struct iconlayer {
+	struct surface base;
+	struct window *window;
+	struct widget *widget;
+	struct wl_list icons_list;
+	cairo_surface_t *image[10];
+	struct rectangle mouse_selection_absolute_size;
+	struct rectangle mouse_selection_relative_size;
+	int selecting;
+};
+
+struct icon {
+	struct widget *widget;
+	struct iconlayer *iconlayer;
+	cairo_surface_t *image;
+	unsigned int selected;
+	struct wl_list link;	/* icons_list */
+	char *text;
+};
+
 struct background {
 	struct surface base;
 	struct window *window;
@@ -82,6 +102,7 @@ struct output {
 	struct wl_list link;
 
 	struct panel *panel;
+	struct iconlayer *iconlayer;
 	struct background *background;
 };
 
@@ -307,6 +328,116 @@ clock_func(struct task *task, uint32_t events)
 }
 
 static void
+iconlayer_finish_selection(struct iconlayer *iconlayer, struct input *input)
+{
+	struct rectangle *relative = &iconlayer->mouse_selection_relative_size;
+	struct rectangle *absolute = &iconlayer->mouse_selection_absolute_size;
+
+	memset(relative, 0, sizeof(*relative));
+	memset(absolute, 0, sizeof(*absolute));
+	iconlayer->selecting = 0;
+}
+
+static void
+iconlayer_start_selection(struct iconlayer *iconlayer, struct input *input)
+{
+	struct rectangle *relative = &iconlayer->mouse_selection_relative_size;
+	struct rectangle *absolute = &iconlayer->mouse_selection_absolute_size;
+	struct icon *icon, *next;
+
+	input_get_position(input, &relative->x, &relative->y);
+	input_get_position(input, &absolute->x, &absolute->y);
+	input_get_position(input, &absolute->width, &absolute->height);
+	relative->width = 0;
+	relative->height = 0;
+	iconlayer->selecting = 1;
+
+	wl_list_for_each_safe(icon, next, &iconlayer->icons_list, link) {
+		icon->selected = 0;
+	}
+}
+
+static void
+iconlayer_update_selection(struct iconlayer *iconlayer, struct input *input)
+{
+	struct rectangle *relative = &iconlayer->mouse_selection_relative_size;
+	struct rectangle *absolute = &iconlayer->mouse_selection_absolute_size;
+	struct rectangle selection;
+	struct icon *icon, *next;
+
+	input_get_position(input, &selection.x, &selection.y);
+	relative->width = selection.x - relative->x;
+	relative->height = selection.y - relative->y;
+
+	if (relative->width == 0)
+		relative->width = 1;
+
+	if (relative->width > 0) {
+		absolute->x = relative->x;
+		absolute->width = selection.x;
+	} else {
+		absolute->x = selection.x;
+		absolute->width = relative->x;
+	}
+
+	if (relative->height == 0)
+		relative->height = 1;
+
+	if (relative->height > 0) {
+		absolute->y = relative->y;
+		absolute->height = selection.y;
+	} else {
+		absolute->y = selection.y;
+		absolute->height = relative->y;
+	}
+
+	/* Performance hack */
+	int x_minus_icon_x = absolute->x - 96;
+	int y_minus_icon_y = absolute->y - 64;
+
+	wl_list_for_each_safe(icon, next, &iconlayer->icons_list, link) {
+		struct rectangle allocation;
+		widget_get_allocation(icon->widget, &allocation);
+		icon->selected = (
+			(x_minus_icon_x < allocation.x) &&
+			(absolute->width > allocation.x) &&
+			(y_minus_icon_y < allocation.y) &&
+			(absolute->height > allocation.y));
+	}
+}
+
+static void
+iconlayer_redraw_handler(struct widget *widget, void *data)
+{
+	cairo_surface_t *surface;
+	cairo_t *cr;
+	struct iconlayer *iconlayer = data;
+	struct rectangle *absolute = &iconlayer->mouse_selection_absolute_size;
+	struct rectangle *relative = &iconlayer->mouse_selection_relative_size;
+	surface = window_get_surface(iconlayer->window);
+	cr = cairo_create(surface);
+	set_hex_color(cr, 0xFFC09060);
+	cairo_paint(cr);
+	cairo_fill(cr);
+
+	if (iconlayer->selecting) {
+		if ((abs(relative->width) > 9) && (abs(relative->height) > 9)) {
+			rounded_rect(cr, absolute->x, absolute->y,
+				absolute->width, absolute->height, 4);
+		} else {
+			cairo_rectangle(cr, absolute->x, absolute->y,
+				abs(relative->width), abs(relative->height));
+		}
+
+		cairo_set_source_rgba(cr, 1, 1, 1, 0.5);
+		cairo_fill(cr);
+	}
+
+	cairo_destroy(cr);
+	cairo_surface_destroy(surface);
+}
+
+static void
 panel_clock_redraw_handler(struct widget *widget, void *data)
 {
 	cairo_surface_t *surface;
@@ -403,6 +534,96 @@ panel_button_handler(struct widget *widget,
 }
 
 static void
+iconlayer_button_handler(struct widget *widget,
+		     struct input *input, uint32_t time,
+		     uint32_t button,
+		     enum wl_pointer_button_state state, void *data)
+{
+	struct iconlayer *iconlayer = data;
+
+	if (button == BTN_LEFT) {
+		if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
+			iconlayer_start_selection(iconlayer, input);
+		} else if (state == WL_POINTER_BUTTON_STATE_RELEASED) {
+			iconlayer_finish_selection(iconlayer, input);
+		}
+		widget_schedule_redraw(widget);
+	}
+}
+
+static int
+iconlayer_motion_handler(struct widget *widget,
+				       struct input *input, uint32_t time,
+				       float x, float y, void *data)
+{
+	struct iconlayer *iconlayer = data;
+
+	if (iconlayer->selecting == 1) {
+		iconlayer_update_selection(iconlayer, input);
+		widget_schedule_redraw(widget);
+	}
+
+	return CURSOR_LEFT_PTR;
+}
+
+static void
+icon_redraw_handler(struct widget *widget, void *data)
+{
+	cairo_surface_t *surface;
+	cairo_t *cr;
+	cairo_text_extents_t extents;
+	cairo_font_extents_t font_extents;
+	struct icon *icon = data;
+	struct rectangle allocation;
+
+	widget_get_allocation(widget, &allocation);
+
+	surface = window_get_surface(icon->iconlayer->window);
+	cr = cairo_create(surface);
+
+	if (icon->selected) {
+		rounded_rect(cr, allocation.x + 2, allocation.y + 2,
+			allocation.x + allocation.width - 4,
+			allocation.y + allocation.height - 4, 5);
+		cairo_set_source_rgba(cr, 1, 1, 1, 0.5);
+		cairo_fill(cr);
+	}
+
+	cairo_select_font_face(cr, "sans",
+			       CAIRO_FONT_SLANT_NORMAL,
+			       CAIRO_FONT_WEIGHT_NORMAL);
+	cairo_set_font_size(cr, 13);
+	cairo_text_extents(cr, "Hello world", &extents);
+	cairo_font_extents (cr, &font_extents);
+	cairo_move_to(cr, allocation.x + 11, allocation.y + 56);
+	cairo_set_source_rgb(cr, 0, 0, 0);
+	cairo_show_text(cr, "Hello world");
+	cairo_move_to(cr, allocation.x + 10, allocation.y + 55);
+	cairo_set_source_rgb(cr, 1, 1, 1);
+	cairo_show_text(cr, "Hello world");
+	cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.0);
+
+	cairo_set_source_surface(cr, icon->image, allocation.x + 31, allocation.y + 7);
+	cairo_paint(cr);
+	cairo_destroy(cr);
+}
+
+static void
+iconlayer_resize_handler(struct widget *widget,
+		     int32_t width, int32_t height, void *data)
+{
+	struct iconlayer *iconlayer = data;
+	int x, y, w, h;
+
+	x = 10;
+	y = 16;
+	h = 600;
+	w = 1300;
+	widget_set_allocation(iconlayer->widget, x, y, w + 1, h + 1);
+	window_schedule_redraw(iconlayer->window);
+}
+
+static void
 panel_resize_handler(struct widget *widget,
 		     int32_t width, int32_t height, void *data)
 {
@@ -439,6 +660,19 @@ panel_configure(void *data,
 	window_schedule_resize(panel->window, width, 32);
 }
 
+static void
+iconlayer_configure(void *data,
+		struct desktop_shell *desktop_shell,
+		uint32_t edges, struct window *window,
+		int32_t width, int32_t height)
+{
+	struct surface *surface = window_get_user_data(window);
+	struct iconlayer *iconlayer = container_of(surface, struct iconlayer, base);
+
+	window_schedule_resize(iconlayer->window, width, height);
+
+}
+
 static struct panel *
 panel_create(struct display *display)
 {
@@ -462,6 +696,71 @@ panel_create(struct display *display)
 	panel_add_clock(panel);
 
 	return panel;
+}
+
+static struct widget *
+icon_create(struct iconlayer *iconlayer, void *data, unsigned int x, unsigned int y)
+{
+	struct icon *icon;
+
+	icon = malloc (sizeof *icon);
+	memset(icon, 0, sizeof *icon);
+
+	icon->image = data;
+	icon->widget = widget_add_widget(iconlayer->widget, icon);
+	icon->image = data;
+	icon->iconlayer = iconlayer;
+	widget_set_allocation(icon->widget, x, y, 96, 64);
+
+	wl_list_insert(iconlayer->icons_list.prev, &icon->link);
+
+	widget_set_redraw_handler(icon->widget, icon_redraw_handler);
+
+	return icon->widget;
+}
+
+static struct iconlayer *
+iconlayer_create(struct desktop *desktop)
+{
+	struct iconlayer *iconlayer;
+
+	iconlayer = malloc(sizeof *iconlayer);
+	memset(iconlayer, 0, sizeof *iconlayer);
+
+	iconlayer->base.configure = iconlayer_configure;
+	iconlayer->window = window_create_custom(desktop->display);
+	iconlayer->widget = window_add_widget(iconlayer->window, iconlayer);
+
+	window_set_title(iconlayer->window, "iconlayer");
+	window_set_custom(iconlayer->window);
+	window_set_user_data(iconlayer->window, iconlayer);
+
+	widget_set_redraw_handler(iconlayer->widget, iconlayer_redraw_handler);
+	widget_set_resize_handler(iconlayer->widget, iconlayer_resize_handler);
+	widget_set_button_handler(iconlayer->widget, iconlayer_button_handler);
+	widget_set_motion_handler(iconlayer->widget, iconlayer_motion_handler);
+
+	iconlayer->image[0] = cairo_image_surface_create_from_png(DATADIR "/weston/folder.png");
+	iconlayer->image[1] = cairo_image_surface_create_from_png(DATADIR "/weston/image-x-generic.png");
+	iconlayer->image[2] = cairo_image_surface_create_from_png(DATADIR "/weston/package-x-generic.png");
+	iconlayer->image[3] = cairo_image_surface_create_from_png(DATADIR "/weston/text-html.png");
+	iconlayer->image[4] = cairo_image_surface_create_from_png(DATADIR "/weston/text-x-generic.png");
+	iconlayer->image[5] = cairo_image_surface_create_from_png(DATADIR "/weston/text-x-preview.png");
+	iconlayer->image[6] = cairo_image_surface_create_from_png(DATADIR "/weston/user-trash.png");
+	iconlayer->image[7] = cairo_image_surface_create_from_png(DATADIR "/weston/video-x-generic.png");
+	iconlayer->image[8] = cairo_image_surface_create_from_png(DATADIR "/weston/x-office-document.png");
+
+	wl_list_init(&iconlayer->icons_list);
+
+	int q;
+	for (q = 0; q < 19; q++) {
+		icon_create(iconlayer, iconlayer->image[q % 9],
+				(rand() & 63) * 16, (rand() & 31) * 16);
+	}
+
+	window_schedule_resize(iconlayer->window, 1000, 800);
+
+	return iconlayer;
 }
 
 static void
@@ -933,7 +1232,10 @@ int main(int argc, char *argv[])
 					output->output, surface);
 
 		output->background = background_create(&desktop);
-		surface = window_get_wl_surface(output->background->window);
+
+		output->iconlayer = iconlayer_create(&desktop);
+		surface = window_get_wl_surface(output->iconlayer->window);
+		
 		desktop_shell_set_background(desktop.shell,
 					     output->output, surface);
 	}

@@ -6,6 +6,15 @@ dist_westondata_DATA =				\
 	pattern.png				\
 	terminal.png				\
 	border.png				\
+	folder.png				\
+	image-x-generic.png			\
+	package-x-generic.png			\
+	text-html.png				\
+	text-x-generic.png			\
+	text-x-preview.png			\
+	user-trash.png				\
+	video-x-generic.png			\
+	x-office-document.png			\
 	icon_window.png				\
 	sign_close.png				\
 	sign_maximize.png			\

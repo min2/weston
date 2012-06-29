@@ -76,6 +76,7 @@ struct desktop_shell {
 	struct weston_layer panel_layer;
 	struct weston_layer background_layer;
 	struct weston_layer lock_layer;
+	struct weston_layer iconlayer_layer;
 
 	struct wl_listener pointer_focus_listener;
 	struct weston_surface *grab_surface;
@@ -1900,6 +1901,39 @@ panel_configure(struct weston_surface *es, int32_t sx, int32_t sy)
 }
 
 static void
+iconlayer_configure(struct weston_surface *es, int32_t sx, int32_t sy)
+{
+	struct desktop_shell *shell = es->private;
+
+	configure_static_surface(es, &shell->iconlayer_layer);
+}
+
+static void
+desktop_shell_set_iconlayer(struct wl_client *client,
+			     struct wl_resource *resource,
+			     struct wl_resource *output_resource,
+			     struct wl_resource *surface_resource)
+{
+	struct desktop_shell *shell = resource->data;
+	struct weston_surface *surface = surface_resource->data;
+
+	if (surface->configure) {
+		wl_resource_post_error(surface_resource,
+				       WL_DISPLAY_ERROR_INVALID_OBJECT,
+				       "surface role already assigned");
+		return;
+	}
+
+	surface->configure = iconlayer_configure;
+	surface->private = shell;
+	surface->output = output_resource->data;
+	desktop_shell_send_configure(resource, 0,
+				     surface_resource,
+				     surface->output->current->width,
+				     surface->output->current->height);
+}
+
+static void
 desktop_shell_set_panel(struct wl_client *client,
 			struct wl_resource *resource,
 			struct wl_resource *output_resource,
@@ -2055,6 +2089,7 @@ move_binding(struct wl_seat *seat, uint32_t time, uint32_t button, void *data)
 
 	surface_move(shsurf, (struct weston_seat *) seat);
 }
+
 
 static void
 resize_binding(struct wl_seat *seat, uint32_t time, uint32_t button, void *data)
