@@ -404,6 +404,8 @@ iconlayer_update_selection(struct iconlayer *iconlayer, struct input *input)
 			(y_minus_icon_y < allocation.y) &&
 			(absolute->height > allocation.y));
 	}
+
+
 }
 
 static void
@@ -752,7 +754,7 @@ iconlayer_create(struct desktop *desktop)
 	wl_list_init(&iconlayer->icons_list);
 
 	int q;
-	for (q = 0; q < 19; q++) {
+	for (q = 0; q < 470; q++) {
 		icon_create(iconlayer, iconlayer->image[q % 9],
 				(rand() & 63) * 16, (rand() & 31) * 16);
 	}
