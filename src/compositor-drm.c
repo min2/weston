@@ -1877,6 +1877,7 @@ drm_compositor_create(struct wl_display *display,
 	drm_device = NULL;
 	udev_list_entry_foreach(entry, udev_enumerate_get_list_entry(e)) {
 		path = udev_list_entry_get_name(entry);
+		weston_log("udev drm device: %s\n", path);
 		device = udev_device_new_from_syspath(ec->udev, path);
 		device_seat =
 			udev_device_get_property_value(device, "ID_SEAT");

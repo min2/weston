@@ -622,6 +622,8 @@ evdev_add_devices(struct udev *udev, struct weston_seat *seat_base)
 			continue;
 		}
 
+		weston_log("udev evdev: %s %s\n", path, sysname);
+
 		device_added(device, seat);
 
 		udev_device_unref(device);
