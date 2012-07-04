@@ -725,6 +725,12 @@ weston_wm_window_destroy(struct weston_wm_window *window)
 }
 
 static void
+weston_wm_window_destroy_iterator_func(void *element, void *data)
+{
+	weston_wm_window_destroy(element);
+}
+
+static void
 weston_wm_handle_create_notify(struct weston_wm *wm, xcb_generic_event_t *event)
 {
 	xcb_create_notify_event_t *create_notify =
@@ -1212,7 +1218,8 @@ weston_wm_create(struct weston_xserver *wxs)
 void
 weston_wm_destroy(struct weston_wm *wm)
 {
-	/* FIXME: Free windows in hash. */
+	hash_table_for_each(wm->window_hash, 
+		weston_wm_window_destroy_iterator_func, NULL);
 	hash_table_destroy(wm->window_hash);
 	xcb_disconnect(wm->conn);
 	wl_event_source_remove(wm->source);

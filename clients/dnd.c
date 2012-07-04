@@ -176,6 +176,9 @@ dnd_redraw_handler(struct widget *widget, void *data)
 	cairo_surface_t *surface;
 	unsigned int i;
 
+
+	fprintf(stderr, "%s\n", __func__);
+
 	surface = window_get_surface(dnd->window);
 	cr = cairo_create(surface);
 	widget_get_allocation(dnd->widget, &allocation);

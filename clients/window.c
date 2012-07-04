@@ -270,6 +270,7 @@ struct frame {
 	struct widget *widget;
 	struct widget *child;
 	struct wl_list buttons_list;
+	struct rectangle title_text_area;
 };
 
 struct menu {
@@ -1331,6 +1332,11 @@ frame_resize_handler(struct widget *widget,
 			x_r -= button_padding;
 		}
 	}
+
+	frame->title_text_area.x = x_l;
+	frame->title_text_area.y = y;
+	frame->title_text_area.width = x_r - x_l;
+	frame->title_text_area.height = t->titlebar_height;
 }
 
 static int
