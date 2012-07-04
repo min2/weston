@@ -246,7 +246,7 @@ weston_wm_window_read_properties(struct weston_wm_window *window)
 		{ XCB_ATOM_WM_CLASS, XCB_ATOM_STRING, F(class) },
 		{ XCB_ATOM_WM_NAME, XCB_ATOM_STRING, F(name) },
 		{ XCB_ATOM_WM_TRANSIENT_FOR, XCB_ATOM_WINDOW, F(transient_for) },
-		{ wm->atom.wm_protocols, TYPE_WM_PROTOCOLS, F(protocols) },
+		{ wm->atom.wm_protocols, TYPE_WM_PROTOCOLS, 0 },
 		{ wm->atom.net_wm_window_type, XCB_ATOM_ATOM, F(type) },
 		{ wm->atom.net_wm_name, XCB_ATOM_STRING, F(name) },
 		{ wm->atom.motif_wm_hints, TYPE_MOTIF_WM_HINTS, 0 },
@@ -272,7 +272,6 @@ weston_wm_window_read_properties(struct weston_wm_window *window)
 					     props[i].atom,
 					     XCB_ATOM_ANY, 0, 2048);
 
-	window->decorate = 1;
 	for (i = 0; i < ARRAY_LENGTH(props); i++)  {
 		reply = xcb_get_property_reply(wm->conn, cookie[i], NULL);
 		if (!reply)
@@ -307,6 +306,7 @@ weston_wm_window_read_properties(struct weston_wm_window *window)
 			*(xcb_atom_t *) p = *atom;
 			break;
 		case TYPE_WM_PROTOCOLS:
+			handle_wm_protocols(window, reply);
 			break;
 		case TYPE_MOTIF_WM_HINTS:
 			hints = xcb_get_property_value(reply);
@@ -416,6 +416,42 @@ weston_wm_handle_configure_notify(struct weston_wm *wm, xcb_generic_event_t *eve
 		configure_notify->window,
 		configure_notify->x, configure_notify->y,
 		configure_notify->width, configure_notify->height);
+
+	/* resize falls here */
+	if (configure_notify->window != window->id)
+		return;
+
+	weston_wm_window_get_child_position(window, &x, &y);
+	window->x = configure_notify->x - x;
+	window->y = configure_notify->y - y;
+}
+
+/*
+ * Follows up ICCCM 4.1.7. The function returns 1 when WM assistance is needed
+ * and 0 otherwise.
+ */
+static int
+weston_wm_focus_assistance(struct weston_wm_window *window)
+{
+	struct weston_wm *wm = window->wm;
+	int is_needed = 0;
+
+	/* the order here is important */
+	if (window->type == wm->atom.net_wm_window_type_normal ||
+	    window->type == wm->atom.net_wm_window_type_dialog)
+		is_needed = 1;
+
+	/* special rule for google-chrome "utility" window that in
+	 * fact has not the type "utility" but "normal" */
+	if (window->type == wm->atom.net_wm_window_type_normal &&
+	    window->override_redirect)
+		is_needed = 0;
+
+	/* if WM_TAKE_FOCUS is absent, we assume WM help is needed. */
+	if (!(window->protocols & ICCCM_WM_TAKE_FOCUS))
+		is_needed = 1;
+
+	return is_needed;
 }
 
 static void
@@ -427,7 +463,11 @@ weston_wm_window_activate(struct wl_listener *listener, void *data)
 		container_of(listener, struct weston_wm, activate_listener);
 	xcb_client_message_event_t client_message;
 
+	fprintf(stderr, "%s\n", __func__);
 	if (window) {
+		if (!weston_wm_focus_assistance(window))
+			return;
+
 		client_message.response_type = XCB_CLIENT_MESSAGE;
 		client_message.format = 32;
 		client_message.window = window->id;
@@ -451,6 +491,8 @@ weston_wm_window_activate(struct wl_listener *listener, void *data)
 	if (wm->focus_window)
 		weston_wm_window_schedule_repaint(wm->focus_window);
 	wm->focus_window = window;
+	if (window)
+		wm->focus_latest = window;
 	if (wm->focus_window)
 		weston_wm_window_schedule_repaint(wm->focus_window);
 }
@@ -707,13 +749,19 @@ static void
 weston_wm_window_schedule_repaint(struct weston_wm_window *window)
 {
 	struct weston_wm *wm = window->wm;
+	void *function;
 
-	if (window->frame_id == XCB_WINDOW_NONE || window->repaint_source)
+	if (window->repaint_source)
 		return;
+
+	if (window->frame_id == XCB_WINDOW_NONE)
+		function = weston_wm_window_draw_opaque;
+	else
+		function = weston_wm_window_draw_decoration;
 
 	window->repaint_source =
 		wl_event_loop_add_idle(wm->server->loop,
-				       weston_wm_window_draw_decoration,
+				       function,
 				       window);
 }
 
@@ -1400,10 +1448,33 @@ xserver_map_shell_surface(struct weston_wm *wm,
 		return;
 	}
 
-	parent = hash_table_lookup(wm->window_hash, window->transient_for->id);
-	shell_interface->set_transient(window->shsurf, parent->surface,
-				       window->x - parent->x + t->margin + t->width,
-				       window->y - parent->y + t->margin + t->titlebar_height,
+	/* not all non-toplevel has transient_for set. So we need this
+	 * workaround to guess a parent that will determine the relative
+	 * position of the transient surface */
+	if (!window->transient_for)
+		parent_id = wm->focus_latest->id;
+	else
+		parent_id = window->transient_for->id;
+
+	parent = hash_table_lookup(wm->window_hash, parent_id);
+
+	/* non-decorated and non-toplevel windows, e.g. sub-menus */
+	if (!parent->decorate && parent->override_redirect) {
+		x = parent->x + t->margin;
+		y = parent->y + t->margin;
+	}
+
+	if (window->type == wm->atom.net_wm_window_type_popup) {
+		shell_interface->set_popup(window->shsurf, parent->shsurf,
+					   seat, grab_serial,
+					   window->x + t->margin - x,
+					   window->y + t->margin - y, 0);
+		return;
+	}
+
+	shell_interface->set_transient(window->shsurf, parent->shsurf,
+				       window->x + t->margin - x,
+				       window->y + t->margin - y,
 				       WL_SHELL_SURFACE_TRANSIENT_INACTIVE);
 }
 

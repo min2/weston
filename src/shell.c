@@ -1573,7 +1573,7 @@ popup_grab_button(struct wl_pointer_grab *grab,
 	} else if (state == WL_POINTER_BUTTON_STATE_RELEASED &&
 		   (shsurf->popup.initial_up ||
 		    time - shsurf->popup.seat->pointer->grab_time > 500)) {
-		wl_shell_surface_send_popup_done(&shsurf->resource);
+		shsurf->client->send_popup_done(shsurf->surface);
 		wl_pointer_end_grab(grab->pointer);
 		shsurf->popup.grab.pointer = NULL;
 	}
@@ -1621,7 +1621,7 @@ shell_map_popup(struct shell_surface *shsurf)
 	if (seat->pointer->grab_serial == shsurf->popup.serial) {
 		wl_pointer_start_grab(seat->pointer, &shsurf->popup.grab);
 	} else {
-		wl_shell_surface_send_popup_done(&shsurf->resource);
+		shsurf->client->send_popup_done(shsurf->surface);
 	}
 }
 
@@ -1647,13 +1647,10 @@ shell_surface_set_popup(struct wl_client *client,
 			int32_t x, int32_t y, uint32_t flags)
 {
 	struct shell_surface *shsurf = resource->data;
+	struct shell_surface *pshsurf = parent_resource->data;
+	struct wl_seat *seat = seat_resource->data;
 
-	shsurf->type = SHELL_SURFACE_POPUP;
-	shsurf->parent = parent_resource->data;
-	shsurf->popup.seat = seat_resource->data;
-	shsurf->popup.serial = serial;
-	shsurf->popup.x = x;
-	shsurf->popup.y = y;
+	set_popup(shsurf, pshsurf, seat, serial, x, y, flags);
 }
 
 static const struct wl_shell_surface_interface shell_surface_implementation = {
