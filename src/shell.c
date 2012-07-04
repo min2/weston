@@ -2586,7 +2586,8 @@ map(struct desktop_shell *shell, struct weston_surface *surface,
 	case SHELL_SURFACE_POPUP:
 	case SHELL_SURFACE_TRANSIENT:
 		parent = shsurf->parent;
-		wl_list_insert(parent->layer_link.prev, &surface->layer_link);
+		if (parent->layer_link.prev != NULL)
+			wl_list_insert(parent->layer_link.prev, &surface->layer_link);
 		break;
 	case SHELL_SURFACE_FULLSCREEN:
 	case SHELL_SURFACE_NONE:
