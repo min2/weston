@@ -57,6 +57,7 @@ struct weston_wm {
 	struct weston_xserver *server;
 	xcb_window_t wm_window;
 	struct weston_wm_window *focus_window;
+	struct weston_wm_window *focus_latest;
 	struct theme *theme;
 	xcb_render_pictforminfo_t render_format;
 	struct wl_listener activate_listener;

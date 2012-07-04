@@ -71,6 +71,7 @@ struct weston_mode {
 struct weston_shell_client {
 	void (*send_configure)(struct weston_surface *surface,
 			       uint32_t edges, int32_t width, int32_t height);
+	void (*send_popup_done)(struct weston_surface *surface);
 };
 
 struct weston_shell_interface {
@@ -85,6 +86,12 @@ struct weston_shell_interface {
 	void (*set_transient)(struct shell_surface *shsurf,
 			      struct weston_surface *parent,
 			      int x, int y, uint32_t flags);
+
+	void (*set_popup) (struct shell_surface *shsurf,
+			   struct shell_surface *pshsurf,
+			   struct wl_seat *seat, uint32_t serial,
+			   int32_t x, int32_t y, uint32_t flags);
+
 	int (*move)(struct shell_surface *shsurf, struct weston_seat *ws);
 	int (*resize)(struct shell_surface *shsurf,
 		      struct weston_seat *ws, uint32_t edges);

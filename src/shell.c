@@ -1102,8 +1102,17 @@ send_configure(struct weston_surface *surface,
 					edges, width, height);
 }
 
+static void
+send_popup_done(struct weston_surface *surface)
+{
+	struct shell_surface *shsurf = get_shell_surface(surface);
+
+	wl_shell_surface_send_popup_done(&shsurf->resource);
+}
+
 static const struct weston_shell_client shell_client = {
-	send_configure
+	send_configure,
+	send_popup_done
 };
 
 static void
@@ -1614,6 +1623,19 @@ shell_map_popup(struct shell_surface *shsurf)
 	} else {
 		wl_shell_surface_send_popup_done(&shsurf->resource);
 	}
+}
+
+static void
+set_popup(struct shell_surface *shsurf, struct shell_surface *pshsurf,
+	  struct wl_seat *seat, uint32_t serial, int32_t x, int32_t y,
+	  uint32_t flags)
+{
+	shsurf->type = SHELL_SURFACE_POPUP;
+	shsurf->parent = pshsurf;
+	shsurf->popup.seat = seat;
+	shsurf->popup.serial = serial;
+	shsurf->popup.x = x;
+	shsurf->popup.y = y;
 }
 
 static void
@@ -3296,6 +3318,7 @@ shell_init(struct weston_compositor *ec)
 	ec->shell_interface.create_shell_surface = create_shell_surface;
 	ec->shell_interface.set_toplevel = set_toplevel;
 	ec->shell_interface.set_transient = set_transient;
+	ec->shell_interface.set_popup = set_popup;
 	ec->shell_interface.move = surface_move;
 	ec->shell_interface.resize = surface_resize;
 

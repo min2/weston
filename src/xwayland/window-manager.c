@@ -33,6 +33,7 @@
 #include <signal.h>
 
 #include "xwayland.h"
+#include <xcb/xcb_icccm.h>
 
 #include "../../shared/cairo-util.h"
 #include "../compositor.h"
@@ -89,7 +90,10 @@ struct motif_wm_hints {
 #define _NET_WM_MOVERESIZE_MOVE_KEYBOARD    10   /* move via keyboard */
 #define _NET_WM_MOVERESIZE_CANCEL           11   /* cancel operation */
 
-
+/* WM_PROTOCOLS property, ICCCM 4.1.2.7 */
+#define ICCCM_WM_TAKE_FOCUS	(1L << 1)
+#define ICCCM_WM_SAVE_YOURSELF	(1L << 2)
+#define ICCCM_WM_DELETE_WINDOW	(1L << 3)
 
 struct weston_wm_window {
 	struct weston_wm *wm;
@@ -207,6 +211,21 @@ read_and_dump_property(struct weston_wm *wm,
 	dump_property(wm, property, reply);
 
 	free(reply);
+}
+
+static void
+handle_wm_protocols(struct weston_wm_window *window,
+		    xcb_get_property_reply_t *reply)
+{
+	xcb_icccm_get_wm_protocols_reply_t protocols;
+	struct weston_wm *wm = window->wm;
+	uint32_t i;
+/*
+	xcb_icccm_get_wm_protocols_from_reply(reply, &protocols);
+	for (i = 0; i < protocols.atoms_len; i++)
+		if (protocols.atoms[i] == wm->atom.wm_take_focus)
+			window->protocols = ICCCM_WM_TAKE_FOCUS;
+*/
 }
 
 /* We reuse some predefined, but otherwise useles atoms */
@@ -388,6 +407,7 @@ weston_wm_handle_configure_notify(struct weston_wm *wm, xcb_generic_event_t *eve
 	xcb_configure_notify_event_t *configure_notify = 
 		(xcb_configure_notify_event_t *) event;
 	struct weston_wm_window *window;
+	int x, y;
 
 	window = hash_table_lookup(wm->window_hash, configure_notify->window);
 
@@ -590,6 +610,37 @@ weston_wm_handle_unmap_notify(struct weston_wm *wm, xcb_generic_event_t *event)
 }
 
 static void
+weston_wm_window_draw_opaque(void *data)
+{
+	struct weston_wm_window *window = data;
+	struct weston_wm *wm = window->wm;
+	struct theme *t = wm->theme;
+	int x, y, width, height;
+
+	window->repaint_source = NULL;
+
+	if (!window->surface)
+		return;
+
+	weston_wm_window_get_frame_size(window, &width, &height);
+	weston_wm_window_get_child_position(window, &x, &y);
+
+	/* We leave an extra pixel around the X window area to
+	 * make sure we don't sample from the undefined alpha
+	 * channel when filtering. */
+	window->surface->opaque_rect[0] =
+		(double) (x - t->margin - 1) / width;
+	window->surface->opaque_rect[1] =
+		(double) (x + window->width + t->margin + 1) / width;
+	window->surface->opaque_rect[2] =
+		(double) (y - t->margin - 1) / height;
+	window->surface->opaque_rect[3] =
+		(double) (y + window->height + t->margin + 1) / height;
+
+	pixman_region32_init_rect(&window->surface->input, 0, 0, width, height);
+}
+
+static void
 weston_wm_window_draw_decoration(void *data)
 {
 	struct weston_wm_window *window = data;
@@ -711,8 +762,10 @@ weston_wm_window_create(struct weston_wm *wm,
 	window->id = id;
 	window->properties_dirty = 1;
 	window->override_redirect = override;
+	window->decorate = !window->override_redirect;
 	window->width = width;
 	window->height = height;
+	window->type = XCB_ATOM_NONE;
 
 	hash_table_insert(wm->window_hash, id, window);
 }
@@ -1301,8 +1354,22 @@ send_configure(struct weston_surface *surface,
 				       weston_wm_window_configure, window);
 }
 
+static void
+send_popup_done(struct weston_surface *surface)
+{
+	struct weston_wm_window *window = get_wm_window(surface);
+	struct weston_wm *wm = window->wm;
+
+	fprintf(stderr, "%s\n", __func__);
+	xcb_set_input_focus (wm->conn, XCB_INPUT_FOCUS_POINTER_ROOT, XCB_NONE,
+			     XCB_TIME_CURRENT_TIME);
+	/* force unmap */
+	xcb_unmap_window(wm->conn, window->id);
+}
+
 static const struct weston_shell_client shell_client = {
-	send_configure
+	send_configure,
+	send_popup_done
 };
 
 static void
@@ -1313,6 +1380,11 @@ xserver_map_shell_surface(struct weston_wm *wm,
 		&wm->server->compositor->shell_interface;
 	struct weston_wm_window *parent;
 	struct theme *t = window->wm->theme;
+	struct weston_compositor *compositor = wm->server->compositor;
+	struct wl_seat *seat = &compositor->seat->seat;
+	uint32_t grab_serial = seat->pointer->grab_serial;
+	int parent_id;
+	int x = 0, y = 0;
 
 	if (!shell_interface->create_shell_surface)
 		return;
