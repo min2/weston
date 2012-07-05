@@ -401,6 +401,10 @@ theme_render_frame(struct theme *t,
 		    width - t->margin * 2, height - t->margin * 2,
 		    t->width, t->titlebar_height);
 
+	cairo_rectangle (cr, t->margin + t->width, t->margin,
+		width - t->margin * 2 - t->width * 2, t->titlebar_height);
+	cairo_clip(cr);
+
 	cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 	cairo_select_font_face(cr, "sans",
 			       CAIRO_FONT_SLANT_NORMAL,
