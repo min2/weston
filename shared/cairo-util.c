@@ -400,11 +400,11 @@ theme_render_frame(struct theme *t,
 		    t->margin, t->margin,
 		    width - t->margin * 2, height - t->margin * 2,
 		    t->width, t->titlebar_height);
-
+/*
 	cairo_rectangle (cr, t->margin + t->width, t->margin, 
 		width - t->margin * 2 - t->width * 2, t->titlebar_height);
 	cairo_clip(cr);
-
+*/
 	cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
 	cairo_select_font_face(cr, "sans",
 			       CAIRO_FONT_SLANT_NORMAL,
@@ -430,7 +430,7 @@ theme_render_frame(struct theme *t,
 		cairo_set_source_rgb(cr, 0.4, 0.4, 0.4);
 		cairo_show_text(cr, title);
 	}
-	cairo_set_source_rgba(cr, 1, 0, 1, 1);
+	cairo_set_source_rgba(cr, 0.0, 0.0, 1.0, 0.5);
 	cairo_paint(cr);
 }
 

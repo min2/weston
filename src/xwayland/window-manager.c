@@ -637,13 +637,13 @@ weston_wm_window_draw_decoration(void *data)
 		 * make sure we don't sample from the undefined alpha
 		 * channel when filtering. */
 		window->surface->opaque_rect[0] =
-			(double) (x - 1) / width;
+			(GLfloat) (x - 1) / width;
 		window->surface->opaque_rect[1] =
-			(double) (x + window->width + 1) / width;
+			(GLfloat) (x + window->width + 1) / width;
 		window->surface->opaque_rect[2] =
-			(double) (y - 1) / height;
+			(GLfloat) (y - 1) / height;
 		window->surface->opaque_rect[3] =
-			(double) (y + window->height + 1) / height;
+			(GLfloat) (y + window->height + 1) / height;
 
 		pixman_region32_init_rect(&window->surface->input,
 					  t->margin, t->margin,
