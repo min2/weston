@@ -142,7 +142,7 @@ send_button(struct wl_client *client, struct wl_resource *resource,
 
 	test->compositor->focus = 1;
 
-	notify_button(seat, 100, button, state);
+	notify_button(seat, 100, button, state, STATE_CHANGE_EVENT);
 }
 
 static void

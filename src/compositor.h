@@ -500,6 +500,11 @@ enum weston_key_state_update {
 	STATE_UPDATE_NONE,
 };
 
+enum weston_button_state_update {
+	STATE_CHANGE_EVENT,
+	STATE_ACTUAL_UPDATE,
+};
+
 void
 weston_version(int *major, int *minor, int *micro);
 
@@ -551,8 +556,15 @@ void
 notify_motion(struct weston_seat *seat, uint32_t time,
 	      wl_fixed_t x, wl_fixed_t y);
 void
-notify_button(struct weston_seat *seat, uint32_t time, int32_t button,
-	      enum wl_pointer_button_state state);
+notify_lag(struct weston_seat *seat, uint32_t time,
+	   int32_t *query_key_min, int32_t *query_key_max);
+void
+notify_lag_end(struct weston_seat *seat, uint32_t time);
+
+void
+notify_button(struct weston_seat *seat, uint32_t time, uint32_t button,
+	      enum wl_pointer_button_state state,
+	      enum weston_button_state_update update_state);
 void
 notify_axis(struct weston_seat *seat, uint32_t time, uint32_t axis,
 	    wl_fixed_t value);

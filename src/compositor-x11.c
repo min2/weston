@@ -943,7 +943,8 @@ x11_compositor_deliver_button_event(struct x11_compositor *c,
 	notify_button(&c->core_seat,
 		      weston_compositor_get_time(), button,
 		      state ? WL_POINTER_BUTTON_STATE_PRESSED :
-			      WL_POINTER_BUTTON_STATE_RELEASED);
+			      WL_POINTER_BUTTON_STATE_RELEASED,
+		      STATE_CHANGE_EVENT);
 }
 
 static void

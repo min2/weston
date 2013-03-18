@@ -1654,7 +1654,15 @@ weston_compositor_idle_inhibit(struct weston_compositor *compositor)
 static void
 weston_compositor_idle_release(struct weston_compositor *compositor)
 {
-	compositor->idle_inhibit--;
+	if (compositor->idle_inhibit)
+		compositor->idle_inhibit--;
+	weston_compositor_wake(compositor);
+}
+
+static void
+weston_compositor_idle_reset(struct weston_compositor *compositor)
+{
+	compositor->idle_inhibit = 0;
 	weston_compositor_wake(compositor);
 }
 
@@ -1795,8 +1803,35 @@ weston_surface_activate(struct weston_surface *surface,
 }
 
 WL_EXPORT void
-notify_button(struct weston_seat *seat, uint32_t time, int32_t button,
-	      enum wl_pointer_button_state state)
+notify_lag(struct weston_seat *seat, uint32_t time,
+	   int32_t *query_key_min, int32_t *query_key_max)
+{
+	struct wl_pointer *pointer = seat->seat.pointer;
+	struct weston_compositor *compositor = seat->compositor;
+
+	weston_compositor_idle_reset(compositor);
+
+	if (pointer->button_count) {
+		pointer->button_count = 0;
+		*query_key_min = pointer->grab_button;
+		*query_key_max = pointer->grab_button + 1;
+	}
+}
+
+WL_EXPORT void
+notify_lag_end(struct weston_seat *seat, uint32_t time)
+{
+	struct wl_pointer *pointer = seat->seat.pointer;
+
+	if (pointer->button_count == 0)
+		pointer->grab->interface->button(pointer->grab, time,
+			pointer->grab_button, WL_POINTER_BUTTON_STATE_RELEASED);
+}
+
+WL_EXPORT void
+notify_button(struct weston_seat *seat, uint32_t time, uint32_t button,
+	      enum wl_pointer_button_state state,
+	      enum weston_button_state_update update_state)
 {
 	struct weston_compositor *compositor = seat->compositor;
 	struct wl_pointer *pointer = seat->seat.pointer;
@@ -1808,16 +1843,25 @@ notify_button(struct weston_seat *seat, uint32_t time, int32_t button,
 		if (compositor->ping_handler && focus)
 			compositor->ping_handler(focus, serial);
 		weston_compositor_idle_inhibit(compositor);
-		if (pointer->button_count == 0) {
+
+		if ((pointer->button_count == 0) &&
+		    (update_state == STATE_CHANGE_EVENT)) {
 			pointer->grab_button = button;
 			pointer->grab_time = time;
 			pointer->grab_x = pointer->x;
 			pointer->grab_y = pointer->y;
 		}
-		pointer->button_count++;
+		if (button == pointer->grab_button)
+			pointer->button_count++;
 	} else {
 		weston_compositor_idle_release(compositor);
-		pointer->button_count--;
+
+		if (pointer->button_count == 0)
+			return;
+
+		if ((button == pointer->grab_button) &&
+		    (update_state == STATE_CHANGE_EVENT))
+			pointer->button_count--;
 	}
 
 	weston_compositor_run_button_binding(compositor, seat, time, button,
@@ -1825,7 +1869,9 @@ notify_button(struct weston_seat *seat, uint32_t time, int32_t button,
 
 	pointer->grab->interface->button(pointer->grab, time, button, state);
 
-	if (pointer->button_count == 1)
+	if ((state == WL_POINTER_BUTTON_STATE_PRESSED) &&
+	    (pointer->button_count == 1) &&
+	    (update_state == STATE_CHANGE_EVENT))
 		pointer->grab_serial =
 			wl_display_get_serial(compositor->wl_display);
 }

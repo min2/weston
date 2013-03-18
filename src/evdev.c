@@ -60,6 +60,34 @@ evdev_led_update(struct evdev_device *device, enum weston_led leds)
 	(void)i; /* no, we really don't care about the return value */
 }
 
+struct evdev_dispatch_interface fallback_interface;
+struct evdev_dispatch_interface syn_drop_interface;
+
+static inline void
+evdev_process_syn(struct evdev_device *device, struct input_event *e, int time)
+{
+	switch (e->code) {
+	case SYN_DROPPED:
+		if (device->dispatch->interface == &fallback_interface)
+			device->dispatch->interface = &syn_drop_interface;
+		break;
+	case SYN_REPORT:
+	default:
+		device->pending_events |= EVDEV_SYN;
+		break;
+	}
+}
+
+static int
+evdev_query_eviocg_button_range(struct evdev_device *device, int time,
+				int32_t key_min, int32_t key_max);
+
+static inline void
+evdev_process_syn_skip(struct evdev_device *d, struct input_event *e, int time)
+{
+
+}
+
 static inline void
 evdev_process_key(struct evdev_device *device, struct input_event *e, int time)
 {
@@ -78,9 +106,9 @@ evdev_process_key(struct evdev_device *device, struct input_event *e, int time)
 		notify_button(device->seat,
 			      time, e->code,
 			      e->value ? WL_POINTER_BUTTON_STATE_PRESSED :
-					 WL_POINTER_BUTTON_STATE_RELEASED);
+					 WL_POINTER_BUTTON_STATE_RELEASED,
+			      STATE_CHANGE_EVENT);
 		break;
-
 	default:
 		notify_key(device->seat,
 			   time, e->code,
@@ -308,7 +336,7 @@ fallback_process(struct evdev_dispatch *dispatch,
 		evdev_process_key(device, event, time);
 		break;
 	case EV_SYN:
-		device->pending_events |= EVDEV_SYN;
+		evdev_process_syn(device, event, time);
 		break;
 	}
 }
@@ -322,6 +350,39 @@ fallback_destroy(struct evdev_dispatch *dispatch)
 struct evdev_dispatch_interface fallback_interface = {
 	fallback_process,
 	fallback_destroy
+};
+
+static void
+syn_drop_process(struct evdev_dispatch *dispatch,
+		 struct evdev_device *device,
+		 struct input_event *event,
+		 uint32_t time)
+{
+	int32_t key_min = KEY_MAX, key_max = 0;
+
+	if ((event->code != EV_SYN) || (event->code != SYN_REPORT))
+		return;
+
+	if (device->dispatch->interface == &syn_drop_interface)
+		device->dispatch->interface = &fallback_interface;
+
+	notify_lag(device->seat, time, &key_min, &key_max);
+
+	if (key_min < key_max)
+		evdev_query_eviocg_button_range(device, time, key_min, key_max);
+
+	notify_lag_end(device->seat, time);
+}
+
+static void
+syn_drop_destroy(struct evdev_dispatch *dispatch)
+{
+	free(dispatch);
+}
+
+struct evdev_dispatch_interface syn_drop_interface = {
+	syn_drop_process,
+	syn_drop_destroy
 };
 
 static struct evdev_dispatch *
@@ -396,6 +457,30 @@ evdev_device_data(int fd, uint32_t mask, void *data)
 	} while (len > 0);
 
 	return 1;
+}
+
+static int
+evdev_query_eviocg_button_range(struct evdev_device *device, int time,
+				int32_t key_min, int32_t key_max)
+{
+	unsigned long key_bits[NBITS(KEY_MAX)];
+	int key;
+
+	memset(key_bits, 0, sizeof(key_bits));
+
+	if (ioctl(device->fd, EVIOCGKEY(KEY_MAX), key_bits) < 0)
+		return -1;
+
+	for (key = key_min; key < key_max; key++) {
+		int value = TEST_BIT(key_bits, key);
+		notify_button(device->seat,
+		      time, key,
+		      value ?	WL_POINTER_BUTTON_STATE_PRESSED :
+				WL_POINTER_BUTTON_STATE_RELEASED,
+		      STATE_ACTUAL_UPDATE);
+	}
+
+	return 0;
 }
 
 static int

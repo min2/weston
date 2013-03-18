@@ -375,7 +375,7 @@ input_handle_button(void *data, struct wl_pointer *pointer,
 	struct wayland_input *input = data;
 	enum wl_pointer_button_state state = state_w;
 
-	notify_button(&input->base, time, button, state);
+	notify_button(&input->base, time, button, state, STATE_CHANGE_EVENT);
 }
 
 static void

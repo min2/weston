@@ -275,7 +275,8 @@ notify_button_pressed(struct touchpad_dispatch *touchpad, uint32_t time)
 {
 	notify_button(touchpad->device->seat, time,
 		      DEFAULT_TOUCHPAD_SINGLE_TAP_BUTTON,
-		      WL_POINTER_BUTTON_STATE_PRESSED);
+		      WL_POINTER_BUTTON_STATE_PRESSED,
+		      STATE_CHANGE_EVENT);
 }
 
 static void
@@ -283,7 +284,8 @@ notify_button_released(struct touchpad_dispatch *touchpad, uint32_t time)
 {
 	notify_button(touchpad->device->seat, time,
 		      DEFAULT_TOUCHPAD_SINGLE_TAP_BUTTON,
-		      WL_POINTER_BUTTON_STATE_RELEASED);
+		      WL_POINTER_BUTTON_STATE_RELEASED,
+		      STATE_CHANGE_EVENT);
 }
 
 static void
@@ -581,7 +583,8 @@ process_key(struct touchpad_dispatch *touchpad,
 		notify_button(device->seat,
 			      time, e->code,
 			      e->value ? WL_POINTER_BUTTON_STATE_PRESSED :
-			                 WL_POINTER_BUTTON_STATE_RELEASED);
+			                 WL_POINTER_BUTTON_STATE_RELEASED,
+					 STATE_CHANGE_EVENT);
 		break;
 	case BTN_TOOL_PEN:
 	case BTN_TOOL_RUBBER:
