@@ -36,6 +36,7 @@ extern "C" {
 #define WL_HIDE_DEPRECATED
 #include <wayland-server.h>
 
+#include "input-state.h"
 #include "version.h"
 #include "matrix.h"
 #include "config-parser.h"
@@ -429,7 +430,7 @@ struct weston_keyboard {
 	uint32_t grab_serial;
 	uint32_t grab_time;
 
-	struct wl_array keys;
+	struct weston_keyboard_keys_state keys;
 
 	struct {
 		uint32_t mods_depressed;
@@ -899,7 +900,7 @@ notify_pointer_focus(struct weston_seat *seat, struct weston_output *output,
 		     wl_fixed_t x, wl_fixed_t y);
 
 void
-notify_keyboard_focus_in(struct weston_seat *seat, struct wl_array *keys,
+notify_keyboard_focus_in(struct weston_seat *seat,
 			 enum weston_key_state_update update_state);
 void
 notify_keyboard_focus_out(struct weston_seat *seat);

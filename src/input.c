@@ -30,6 +30,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include "input-state.h"
 #include "../shared/os-compatibility.h"
 #include "compositor.h"
 
@@ -346,8 +347,12 @@ weston_keyboard_create(void)
 	if (keyboard == NULL)
 	    return NULL;
 
+	struct weston_keyboard_keys_state *keje = &keyboard->keys;
+
+	weston_log("Created keyboard %p, keye=%p\n", keyboard, keje);
+
 	wl_list_init(&keyboard->resource_list);
-	wl_array_init(&keyboard->keys);
+	state_keyboard_keys_init(&keyboard->keys);
 	keyboard->focus_listener.notify = lose_keyboard_focus;
 	keyboard->default_grab.interface = &default_keyboard_grab_interface;
 	keyboard->default_grab.keyboard = keyboard;
@@ -363,7 +368,7 @@ weston_keyboard_destroy(struct weston_keyboard *keyboard)
 	/* XXX: What about keyboard->resource_list? */
 	if (keyboard->focus_resource)
 		wl_list_remove(&keyboard->focus_listener.link);
-	wl_array_release(&keyboard->keys);
+	state_keyboard_keys_release(&keyboard->keys);
 	free(keyboard);
 }
 
@@ -489,8 +494,12 @@ weston_keyboard_set_focus(struct weston_keyboard *keyboard,
 					   keyboard->modifiers.mods_latched,
 					   keyboard->modifiers.mods_locked,
 					   keyboard->modifiers.group);
+
+		weston_log("wl_keyboard_send_enter:\n");
+		dump_keyz(&keyboard->keys);
+
 		wl_keyboard_send_enter(resource, serial, surface->resource,
-				       &keyboard->keys);
+				       &keyboard->keys.keys);
 		wl_resource_add_destroy_listener(resource,
 						 &keyboard->focus_listener);
 		keyboard->focus_serial = serial;
@@ -735,6 +744,8 @@ notify_modifiers(struct weston_seat *seat, uint32_t serial)
 	enum weston_led leds = 0;
 	int changed = 0;
 
+	weston_log("notify_modifiers\n");
+
 	/* Serialize and update our internal state, checking to see if it's
 	 * different to the previous state. */
 	mods_depressed = xkb_state_serialize_mods(seat->xkb_state.state,
@@ -838,7 +849,6 @@ notify_key(struct weston_seat *seat, uint32_t time, uint32_t key,
 		(struct weston_surface *) keyboard->focus;
 	struct weston_keyboard_grab *grab = keyboard->grab;
 	uint32_t serial = wl_display_next_serial(compositor->wl_display);
-	uint32_t *k, *end;
 
 	if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
 		if (compositor->ping_handler && focus)
@@ -851,21 +861,6 @@ notify_key(struct weston_seat *seat, uint32_t time, uint32_t key,
 		weston_compositor_idle_release(compositor);
 	}
 
-	end = keyboard->keys.data + keyboard->keys.size;
-	for (k = keyboard->keys.data; k < end; k++) {
-		if (*k == key) {
-			/* Ignore server-generated repeats. */
-			if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
-				return;
-			*k = *--end;
-		}
-	}
-	keyboard->keys.size = (void *) end - keyboard->keys.data;
-	if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
-		k = wl_array_add(&keyboard->keys, sizeof *k);
-		*k = key;
-	}
-
 	if (grab == &keyboard->default_grab ||
 	    grab == &keyboard->input_method_grab) {
 		weston_compositor_run_key_binding(compositor, seat, time, key,
@@ -873,9 +868,12 @@ notify_key(struct weston_seat *seat, uint32_t time, uint32_t key,
 		grab = keyboard->grab;
 	}
 
+	weston_log("KEY %u %u %u\n", time, key, state);
+
 	grab->interface->key(grab, time, key, state);
 
 	if (update_state == STATE_UPDATE_AUTOMATIC) {
+		weston_log("KEY MOD STATE %u %u\n", key, state);
 		update_modifier_state(seat,
 				      wl_display_get_serial(compositor->wl_display),
 				      key,
@@ -911,7 +909,7 @@ destroy_device_saved_kbd_focus(struct wl_listener *listener, void *data)
 }
 
 WL_EXPORT void
-notify_keyboard_focus_in(struct weston_seat *seat, struct wl_array *keys,
+notify_keyboard_focus_in(struct weston_seat *seat,
 			 enum weston_key_state_update update_state)
 {
 	struct weston_compositor *compositor = seat->compositor;
@@ -919,17 +917,24 @@ notify_keyboard_focus_in(struct weston_seat *seat, struct wl_array *keys,
 	struct weston_surface *surface;
 	uint32_t *k, serial;
 
+	weston_log("focus_in\n");
+
 	serial = wl_display_next_serial(compositor->wl_display);
-	wl_array_copy(&keyboard->keys, keys);
-	wl_array_for_each(k, &keyboard->keys) {
+/*
+	wl_array_copy(&keyboard->keys.keys, keys);
+*/
+
+/*
+	wl_array_for_each(k, &keyboard->keys.keys) {
 		weston_compositor_idle_inhibit(compositor);
 		if (update_state == STATE_UPDATE_AUTOMATIC)
 			update_modifier_state(seat, serial, *k,
 					      WL_KEYBOARD_KEY_STATE_PRESSED);
 	}
+*/
 
 	/* Run key bindings after we've updated the state. */
-	wl_array_for_each(k, &keyboard->keys) {
+	wl_array_for_each(k, &keyboard->keys.keys) {
 		weston_compositor_run_key_binding(compositor, seat, 0, *k,
 						  WL_KEYBOARD_KEY_STATE_PRESSED);
 	}
@@ -951,8 +956,14 @@ notify_keyboard_focus_out(struct weston_seat *seat)
 	uint32_t *k, serial;
 
 	serial = wl_display_next_serial(compositor->wl_display);
-	wl_array_for_each(k, &keyboard->keys) {
+
+	weston_log("focus_out\n");
+
+	wl_array_for_each(k, &keyboard->keys.keys) {
 		weston_compositor_idle_release(compositor);
+
+		weston_log("KEY MOD STATE %u release\n", *k);
+
 		update_modifier_state(seat, serial, *k,
 				      WL_KEYBOARD_KEY_STATE_RELEASED);
 	}
@@ -1491,6 +1502,8 @@ weston_seat_init_keyboard(struct weston_seat *seat, struct xkb_keymap *keymap)
 
 	seat->keyboard = keyboard;
 	keyboard->seat = seat;
+
+	weston_log("Created on seat %p\n", seat);
 
 	seat_send_updated_caps(seat);
 

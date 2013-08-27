@@ -24,6 +24,7 @@
 #define EVDEV_H
 
 #include "config.h"
+#include "libevdev-int.h"
 
 #include <linux/input.h>
 #include <wayland-util.h>
@@ -81,6 +82,12 @@ struct evdev_device {
 	int is_mt;
 };
 
+struct libevdev_device {
+	struct libevdev *dev;
+	struct wl_list link;
+	struct evdev_device *device; /*for backward compatibility?*/
+};
+
 /* copied from udev/extras/input_id/input_id.c */
 /* we must use this kernel-compatible implementation */
 #define BITS_PER_LONG (sizeof(unsigned long) * 8)
@@ -116,14 +123,24 @@ evdev_touchpad_create(struct evdev_device *device);
 void
 evdev_led_update(struct evdev_device *device, enum weston_led leds);
 
+void
+libevdev_led_update(struct libevdev_device *device, enum weston_led leds);
+
 struct evdev_device *
 evdev_device_create(struct weston_seat *seat, const char *path, int device_fd);
 
 void
 evdev_device_destroy(struct evdev_device *device);
 
+struct libevdev_device *
+libevdev_device_create(struct weston_seat *seat, const char *path, int device_fd);
+
 void
-evdev_notify_keyboard_focus(struct weston_seat *seat,
-			    struct wl_list *evdev_devices);
+libevdev_device_destroy(struct libevdev_device *device);
+
+void
+evdev_notify_keyboard_focus(struct weston_seat *seat);
+
+
 
 #endif /* EVDEV_H */

@@ -1190,7 +1190,7 @@ x11_compositor_handle_event(int fd, uint32_t mask, void *data)
 			 * event, rather than with the focus event.  I'm not
 			 * sure of the exact semantics around it and whether
 			 * we can ensure that we get both? */
-			notify_keyboard_focus_in(&c->core_seat, &c->keys,
+			notify_keyboard_focus_in(&c->core_seat,
 						 STATE_UPDATE_AUTOMATIC);
 
 			free(prev);

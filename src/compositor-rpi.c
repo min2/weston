@@ -489,7 +489,16 @@ evdev_add_devices(struct udev *udev, struct weston_seat *seat_base)
 	}
 	udev_enumerate_unref(e);
 
-	evdev_notify_keyboard_focus(&seat->base, &seat->devices_list);
+/*
+FIXME
+libevdev_activate_external_state
+evdev_init_keyboard_state
+*/
+	libevdev_activate_external_state(&seat->base, &seat->devices_list);
+
+	evdev_init_keyboard_state(&seat->base, &seat->devices_list);
+
+	evdev_notify_keyboard_focus(&seat->base);
 
 	if (wl_list_empty(&seat->devices_list)) {
 		weston_log(
