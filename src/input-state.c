@@ -74,11 +74,11 @@ state_keyboard_keys_push(struct weston_keyboard_keys_state *keyboard,
 {
 	uint32_t *k;
 	unsigned long *k_where;
-/*
+
 	dump_keyz(keyboard);
 
 	weston_log("puuuush %u\n", key);
-*/
+
 	k = wl_array_add(&keyboard->keys, sizeof *k);
 	k_where = wl_array_add(&keyboard->keys_where, sizeof *k_where);
 	*k = key;
@@ -94,10 +94,10 @@ state_keyboard_keys_pop(struct weston_keyboard_keys_state *keyboard,
 {
 	uint32_t *end = keyboard->keys.data + keyboard->keys.size;
 	unsigned long *e = keyboard->keys_where.data + keyboard->keys_where.size;
-/*
+
 	weston_log("Doing POP %p \n", keyboard);
 	dump_keyz(keyboard);
-*/
+
 	*k = *(end-1);
 	*k_where = *(e-1);
 	keyboard->keys.size -= sizeof *k;

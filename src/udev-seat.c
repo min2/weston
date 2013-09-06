@@ -281,15 +281,15 @@ udev_input_remove_devices(struct udev_input *input)
 	struct udev_seat *seat;
 
 	wl_list_for_each(seat, &input->compositor->seat_list, base.link) {
-		libevdev_deactivate_external_state(&seat->base, &seat->devices_list);
+		if (seat->base.keyboard)
+			notify_keyboard_focus_out(&seat->base);
 	}
 
 	wl_list_for_each(seat, &input->compositor->seat_list, base.link) {
+		libevdev_deactivate_external_state(&seat->base, &seat->devices_list);
+
 		wl_list_for_each_safe(device, next, &seat->devices_list, link)
 			libevdev_device_destroy(device);
-
-		if (seat->base.keyboard)
-			notify_keyboard_focus_out(&seat->base);
 	}
 }
 

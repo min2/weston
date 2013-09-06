@@ -968,7 +968,7 @@ notify_keyboard_focus_out(struct weston_seat *seat)
 
 	serial = wl_display_next_serial(compositor->wl_display);
 
-	weston_log("focus_out\n");
+	weston_log("focus_out {\n");
 
 	wl_array_for_each(k, &keyboard->keys.keys) {
 		weston_compositor_idle_release(compositor);
@@ -978,6 +978,8 @@ notify_keyboard_focus_out(struct weston_seat *seat)
 		update_modifier_state(seat, serial, *k,
 				      WL_KEYBOARD_KEY_STATE_RELEASED);
 	}
+
+	weston_log("} focus_out\n");
 
 	seat->modifier_state = 0;
 
