@@ -795,6 +795,15 @@ notify_modifiers(struct weston_seat *seat, uint32_t serial)
 	seat->xkb_state.leds = leds;
 
 	if (changed) {
+		weston_log("MODS %u %u %u %u \n",
+					   keyboard->modifiers.mods_depressed,
+					   keyboard->modifiers.mods_latched,
+					   keyboard->modifiers.mods_locked,
+					   keyboard->modifiers.group);
+
+	}
+
+	if (changed) {
 		grab->interface->modifiers(grab,
 					   serial,
 					   keyboard->modifiers.mods_depressed,
@@ -813,6 +822,8 @@ update_modifier_state(struct weston_seat *seat, uint32_t serial, uint32_t key,
 	/* Keyboard modifiers don't exist in raw keyboard mode */
 	if (!seat->compositor->use_xkbcommon)
 		return;
+
+	weston_log("chcem to uvolnit\n");
 
 	if (state == WL_KEYBOARD_KEY_STATE_PRESSED)
 		direction = XKB_KEY_DOWN;
@@ -868,7 +879,7 @@ notify_key(struct weston_seat *seat, uint32_t time, uint32_t key,
 		grab = keyboard->grab;
 	}
 
-	weston_log("KEY %u %u %u\n", time, key, state);
+	weston_log("KEYZ %u %u\n", key, state);
 
 	grab->interface->key(grab, time, key, state);
 
