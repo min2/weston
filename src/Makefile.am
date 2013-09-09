@@ -18,6 +18,8 @@ weston_SOURCES =				\
 	log.c					\
 	compositor.c				\
 	compositor.h				\
+	input-state.c				\
+	input-state.h				\
 	input.c					\
 	data-device.c				\
 	filter.c				\
@@ -145,6 +147,11 @@ drm_backend_la_SOURCES =			\
 	tty.c					\
 	udev-seat.c				\
 	udev-seat.h				\
+	libevdev.c				\
+	libevdev.h				\
+	libevdev-int.h				\
+	libevdev-util.h				\
+	event-names.h				\
 	evdev.c					\
 	evdev.h					\
 	evdev-touchpad.c			\
@@ -186,6 +193,11 @@ rpi_backend_la_SOURCES =			\
 	rpi-renderer.h				\
 	rpi-bcm-stubs.h 			\
 	tty.c					\
+	libevdev.c				\
+	libevdev.h				\
+	libevdev-int.h				\
+	libevdev-util.h				\
+	event-names.h				\
 	evdev.c					\
 	evdev.h					\
 	evdev-touchpad.c
@@ -219,6 +231,11 @@ fbdev_backend_la_SOURCES = \
 	tty.c \
 	udev-seat.c \
 	udev-seat.h \
+	libevdev.c				\
+	libevdev.h				\
+	libevdev-int.h				\
+	libevdev-util.h				\
+	event-names.h				\
 	evdev.c \
 	evdev.h \
 	evdev-touchpad.c \

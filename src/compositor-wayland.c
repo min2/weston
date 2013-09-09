@@ -531,8 +531,7 @@ input_handle_keyboard_enter(void *data,
 
 	/* XXX: If we get a modifier event immediately before the focus,
 	 *      we should try to keep the same serial. */
-	notify_keyboard_focus_in(&input->base, keys,
-				 STATE_UPDATE_AUTOMATIC);
+	notify_keyboard_focus_in(&input->base, STATE_UPDATE_AUTOMATIC);
 }
 
 static void

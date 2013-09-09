@@ -29,10 +29,25 @@
 #include <fcntl.h>
 #include <mtdev.h>
 
+#include "libevdev.h"
+
 #include "compositor.h"
 #include "evdev.h"
 
 #define DEFAULT_AXIS_STEP_DISTANCE wl_fixed_from_int(10)
+
+struct libevdev_external_key_values_interface input_state_interface = {
+	&state_keyboard_keys_get_reset,
+	&state_keyboard_keys_get_set,
+	&state_keyboard_keys_get_update,
+	&state_keyboard_keys_get,
+	&state_keyboard_keys_reset,
+	&state_keyboard_keys_set,
+	&state_keyboard_keys_update,
+	&state_keyboard_keys_sync,
+	&state_keyboard_keys_deactivate,
+	&state_keyboard_keys_activate
+};
 
 void
 evdev_led_update(struct evdev_device *device, enum weston_led leds)
@@ -62,6 +77,12 @@ evdev_led_update(struct evdev_device *device, enum weston_led leds)
 
 	i = write(device->fd, ev, sizeof ev);
 	(void)i; /* no, we really don't care about the return value */
+}
+
+void
+libevdev_led_update(struct libevdev_device *device, enum weston_led leds)
+{
+	evdev_led_update(device->device, leds);
 }
 
 static inline void
@@ -363,63 +384,44 @@ fallback_dispatch_create(void)
 }
 
 static void
-evdev_process_events(struct evdev_device *device,
-		     struct input_event *ev, int count)
+libevdev_process_events(struct libevdev_device *dev)
 {
-	struct evdev_dispatch *dispatch = device->dispatch;
-	struct input_event *e, *end;
-	uint32_t time = 0;
+	struct input_event ev;
+	int rc;
+	uint32_t time;
+	int did_motion = 0;
+	do {
+		rc = libevdev_next_event(dev->dev, LIBEVDEV_READ_NORMAL, &ev);
 
-	device->pending_events = 0;
+		if (rc == 0) {
+			time = ev.time.tv_sec * 1000 + ev.time.tv_usec / 1000;
+			/* we try to minimize the amount of notifications to be
+			 * forwarded to the compositor, so we accumulate motion
+			 * events and send as a bunch */
+			if (!is_motion_event(&ev))
+				evdev_flush_motion(dev->device, time);
+			else
+				did_motion = 1;
 
-	e = ev;
-	end = e + count;
-	for (e = ev; e < end; e++) {
-		time = e->time.tv_sec * 1000 + e->time.tv_usec / 1000;
+			dev->device->dispatch->interface->process(
+					dev->device->dispatch, dev->device, &ev, time);
+		}
+	} while (rc == 1 || rc == 0);
 
-		/* we try to minimize the amount of notifications to be
-		 * forwarded to the compositor, so we accumulate motion
-		 * events and send as a bunch */
-		if (!is_motion_event(e))
-			evdev_flush_motion(device, time);
-
-		dispatch->interface->process(dispatch, device, e, time);
-	}
-
-	evdev_flush_motion(device, time);
+	if (did_motion)
+		evdev_flush_motion(dev->device, time);
 }
 
 static int
-evdev_device_data(int fd, uint32_t mask, void *data)
+libevdev_device_data(int fd, uint32_t mask, void *data)
 {
-	struct weston_compositor *ec;
-	struct evdev_device *device = data;
-	struct input_event ev[32];
-	int len;
+	struct libevdev_device *device = data;
+	struct weston_compositor *ec = device->device->seat->compositor;
 
-	ec = device->seat->compositor;
 	if (!ec->focus)
 		return 1;
 
-	/* If the compositor is repainting, this function is called only once
-	 * per frame and we have to process all the events available on the
-	 * fd, otherwise there will be input lag. */
-	do {
-		if (device->mtdev)
-			len = mtdev_get(device->mtdev, fd, ev,
-					ARRAY_LENGTH(ev)) *
-				sizeof (struct input_event);
-		else
-			len = read(fd, &ev, sizeof ev);
-
-		if (len < 0 || len % sizeof ev[0] != 0) {
-			/* FIXME: call evdev_device_destroy when errno is ENODEV. */
-			return 1;
-		}
-
-		evdev_process_events(device, ev, len / sizeof ev[0]);
-
-	} while (len > 0);
+	libevdev_process_events(device);
 
 	return 1;
 }
@@ -556,7 +558,7 @@ evdev_configure_device(struct evdev_device *device)
 {
 	if ((device->caps &
 	     (EVDEV_MOTION_ABS | EVDEV_MOTION_REL | EVDEV_BUTTON))) {
-		weston_seat_init_pointer(device->seat);
+
 		weston_log("input device %s, %s is a pointer caps =%s%s%s\n",
 			   device->devname, device->devnode,
 			   device->caps & EVDEV_MOTION_ABS ? " absolute-motion" : "",
@@ -564,13 +566,12 @@ evdev_configure_device(struct evdev_device *device)
 			   device->caps & EVDEV_BUTTON ? " button" : "");
 	}
 	if ((device->caps & EVDEV_KEYBOARD)) {
-		if (weston_seat_init_keyboard(device->seat, NULL) < 0)
-			return -1;
+
 		weston_log("input device %s, %s is a keyboard\n",
 			   device->devname, device->devnode);
 	}
 	if ((device->caps & EVDEV_TOUCH)) {
-		weston_seat_init_touch(device->seat);
+
 		weston_log("input device %s, %s is a touch device\n",
 			   device->devname, device->devnode);
 	}
@@ -602,6 +603,7 @@ evdev_device_create(struct weston_seat *seat, const char *path, int device_fd)
 	device->rel.dy = 0;
 	device->dispatch = NULL;
 	device->fd = device_fd;
+	wl_list_init(&device->link);
 
 	ioctl(device->fd, EVIOCGNAME(sizeof(devname)), devname);
 	devname[sizeof(devname) - 1] = '\0';
@@ -619,12 +621,6 @@ evdev_device_create(struct weston_seat *seat, const char *path, int device_fd)
 	if (device->dispatch == NULL)
 		device->dispatch = fallback_dispatch_create();
 	if (device->dispatch == NULL)
-		goto err;
-
-	device->source = wl_event_loop_add_fd(ec->input_loop, device->fd,
-					      WL_EVENT_READABLE,
-					      evdev_device_data, device);
-	if (device->source == NULL)
 		goto err;
 
 	return device;
@@ -645,8 +641,6 @@ evdev_device_destroy(struct evdev_device *device)
 
 	if (device->source)
 		wl_event_source_remove(device->source);
-	if (!wl_list_empty(&device->link))
-		wl_list_remove(&device->link);
 	if (device->mtdev)
 		mtdev_close_delete(device->mtdev);
 	close(device->fd);
@@ -655,45 +649,129 @@ evdev_device_destroy(struct evdev_device *device)
 	free(device);
 }
 
-void
-evdev_notify_keyboard_focus(struct weston_seat *seat,
-			    struct wl_list *evdev_devices)
+struct libevdev_device *
+libevdev_device_create(struct weston_seat *seat, const char *path, int device_fd)
 {
-	struct evdev_device *device;
-	struct wl_array keys;
-	unsigned int i, set;
-	char evdev_keys[(KEY_CNT + 7) / 8];
-	char all_keys[(KEY_CNT + 7) / 8];
-	uint32_t *k;
-	int ret;
+	struct libevdev_device *device = NULL;
+	struct libevdev *dev = NULL;
+	struct weston_compositor *ec = seat->compositor;
+
+	device = zalloc(sizeof *device);
+	if (device == NULL)
+		return NULL;
+
+	if (libevdev_new_from_fd(device_fd, &dev) < 0) {
+		fprintf(stderr, "Failed to init libevdev\n");
+		free(device);
+		return NULL;
+	}
+
+	device->device = evdev_device_create(seat, path, device_fd);
+
+	if (device->device == EVDEV_UNHANDLED_DEVICE) {
+		libevdev_free(dev); 	
+		free(device);
+		return EVDEV_UNHANDLED_DEVICE;
+	}
+
+	if (device->device == NULL) {
+		libevdev_free(dev); 	
+		free(device);
+		return NULL;
+	}
+
+	device->device->source = wl_event_loop_add_fd(ec->input_loop, device_fd,
+					      WL_EVENT_READABLE,
+					      libevdev_device_data, device);
+	if (device->device->source == NULL) {
+		evdev_device_destroy(device->device);
+		libevdev_free(dev); 	
+		free(device);
+		return NULL;
+	}
+
+	device->dev = dev;
+
+	return device;
+}
+
+
+void
+libevdev_device_destroy(struct libevdev_device *device)
+{
+	wl_list_remove(&device->link);
+	evdev_device_destroy(device->device);
+	libevdev_free(device->dev); 	
+	free(device);
+}
+
+#include "input-state.h"
+
+int
+libevdev_activate_external_state(struct weston_seat *seat,
+				 struct wl_list *evdev_devices)
+{
+	struct libevdev_device *device;
+
+	weston_seat_init_pointer(seat);
+
+	if (weston_seat_init_keyboard(seat, NULL) < 0)
+		return -1;
+
+	weston_seat_init_touch(seat);
+
+	wl_list_for_each(device, evdev_devices, link) {
+		/* here we somehow decide what kind of key state is suitable */
+/*
+		weston_log("libevdev_activate_external_state seat=%p kbd %p\n", seat, seat->keyboard);
+*/
+
+		libevdev_external_key_values_activate(device->dev,
+							&input_state_interface,
+							&seat->keyboard->keys);
+
+	}
+	return 0;
+}
+
+
+void
+libevdev_deactivate_external_state(struct weston_seat *seat,
+				 struct wl_list *evdev_devices)
+{
+	struct libevdev_device *device;
+
+	wl_list_for_each(device, evdev_devices, link) {
+		/* here we somehow decide what kind of key state is suitable */
+/*
+		weston_log("libevdev_activate_external_state seat=%p kbd %p\n", seat, seat->keyboard);
+*/
+		libevdev_external_key_values_deactivate(device->dev);
+
+	}
+}
+
+
+void
+evdev_init_keyboard_state(struct weston_seat *seat,
+			  struct wl_list *evdev_devices)
+{
+	struct libevdev_device *device;
 
 	if (!seat->keyboard)
 		return;
 
-	memset(all_keys, 0, sizeof all_keys);
 	wl_list_for_each(device, evdev_devices, link) {
-		memset(evdev_keys, 0, sizeof evdev_keys);
-		ret = ioctl(device->fd,
-			    EVIOCGKEY(sizeof evdev_keys), evdev_keys);
-		if (ret < 0) {
-			weston_log("failed to get keys for device %s\n",
-				device->devnode);
-			continue;
-		}
-		for (i = 0; i < ARRAY_LENGTH(evdev_keys); i++)
-			all_keys[i] |= evdev_keys[i];
+/*
+		weston_log("evdev_init_keyboard_state kbd %p\n", seat->keyboard);
+*/
+		if (libevdev_has_event_type(device->dev, EV_KEY))
+			libevdev_sync_key_state(device->dev);
 	}
+}
 
-	wl_array_init(&keys);
-	for (i = 0; i < KEY_CNT; i++) {
-		set = all_keys[i >> 3] & (1 << (i & 7));
-		if (set) {
-			k = wl_array_add(&keys, sizeof *k);
-			*k = i;
-		}
-	}
-
-	notify_keyboard_focus_in(seat, &keys, STATE_UPDATE_AUTOMATIC);
-
-	wl_array_release(&keys);
+void
+evdev_notify_keyboard_focus(struct weston_seat *seat)
+{
+	notify_keyboard_focus_in(seat, STATE_UPDATE_AUTOMATIC);
 }

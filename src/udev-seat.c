@@ -44,7 +44,7 @@ static int
 device_added(struct udev_device *udev_device, struct udev_input *input)
 {
 	struct weston_compositor *c;
-	struct evdev_device *device;
+	struct libevdev_device *device;
 	struct weston_output *output;
 	const char *devnode;
 	const char *device_seat, *seat_name, *output_name;
@@ -81,7 +81,7 @@ device_added(struct udev_device *udev_device, struct udev_input *input)
 		return 0;
 	}
 
-	device = evdev_device_create(&seat->base, devnode, fd);
+	device = libevdev_device_create(&seat->base, devnode, fd);
 	if (device == EVDEV_UNHANDLED_DEVICE) {
 		close(fd);
 		weston_log("not using input device '%s'.\n", devnode);
@@ -98,20 +98,20 @@ device_added(struct udev_device *udev_device, struct udev_input *input)
 
 	if (calibration_values && sscanf(calibration_values,
 					 "%f %f %f %f %f %f",
-					 &device->abs.calibration[0],
-					 &device->abs.calibration[1],
-					 &device->abs.calibration[2],
-					 &device->abs.calibration[3],
-					 &device->abs.calibration[4],
-					 &device->abs.calibration[5]) == 6) {
-		device->abs.apply_calibration = 1;
+					 &device->device->abs.calibration[0],
+					 &device->device->abs.calibration[1],
+					 &device->device->abs.calibration[2],
+					 &device->device->abs.calibration[3],
+					 &device->device->abs.calibration[4],
+					 &device->device->abs.calibration[5]) == 6) {
+		device->device->abs.apply_calibration = 1;
 		weston_log ("Applying calibration: %f %f %f %f %f %f\n",
-			    device->abs.calibration[0],
-			    device->abs.calibration[1],
-			    device->abs.calibration[2],
-			    device->abs.calibration[3],
-			    device->abs.calibration[4],
-			    device->abs.calibration[5]);
+			    device->device->abs.calibration[0],
+			    device->device->abs.calibration[1],
+			    device->device->abs.calibration[2],
+			    device->device->abs.calibration[3],
+			    device->device->abs.calibration[4],
+			    device->device->abs.calibration[5]);
 	}
 
 	wl_list_insert(seat->devices_list.prev, &device->link);
@@ -125,7 +125,7 @@ device_added(struct udev_device *udev_device, struct udev_input *input)
 	if (output_name) {
 		wl_list_for_each(output, &c->output_list, link)
 			if (strcmp(output->name, output_name) == 0)
-				device->output = output;
+				device->device->output = output;
 	}
 
 	return 0;
@@ -165,7 +165,15 @@ udev_input_add_devices(struct udev_input *input, struct udev *udev)
 	udev_enumerate_unref(e);
 
 	wl_list_for_each(seat, &input->compositor->seat_list, base.link) {
-		evdev_notify_keyboard_focus(&seat->base, &seat->devices_list);
+		libevdev_activate_external_state(&seat->base, &seat->devices_list);
+	}
+
+	wl_list_for_each(seat, &input->compositor->seat_list, base.link) {
+		evdev_init_keyboard_state(&seat->base, &seat->devices_list);
+	}
+
+	wl_list_for_each(seat, &input->compositor->seat_list, base.link) {
+		evdev_notify_keyboard_focus(&seat->base);
 
 		if (!wl_list_empty(&seat->devices_list))
 			devices_found = 1;
@@ -190,7 +198,7 @@ evdev_udev_handler(int fd, uint32_t mask, void *data)
 {
 	struct udev_input *input = data;
 	struct udev_device *udev_device;
-	struct evdev_device *device, *next;
+	struct libevdev_device *device, *next;
 	const char *action;
 	const char *devnode;
 	struct udev_seat *seat;
@@ -213,10 +221,10 @@ evdev_udev_handler(int fd, uint32_t mask, void *data)
 		devnode = udev_device_get_devnode(udev_device);
 		wl_list_for_each(seat, &input->compositor->seat_list, base.link) {
 			wl_list_for_each_safe(device, next, &seat->devices_list, link)
-				if (!strcmp(device->devnode, devnode)) {
+				if (!strcmp(device->device->devnode, devnode)) {
 					weston_log("input device %s, %s removed\n",
-							device->devname, device->devnode);
-					evdev_device_destroy(device);
+							device->device->devname, device->device->devnode);
+					libevdev_device_destroy(device);
 				break;
 			}
 		}
@@ -269,15 +277,19 @@ udev_input_enable(struct udev_input *input, struct udev *udev)
 static void
 udev_input_remove_devices(struct udev_input *input)
 {
-	struct evdev_device *device, *next;
+	struct libevdev_device *device, *next;
 	struct udev_seat *seat;
 
 	wl_list_for_each(seat, &input->compositor->seat_list, base.link) {
-		wl_list_for_each_safe(device, next, &seat->devices_list, link)
-			evdev_device_destroy(device);
-
 		if (seat->base.keyboard)
 			notify_keyboard_focus_out(&seat->base);
+	}
+
+	wl_list_for_each(seat, &input->compositor->seat_list, base.link) {
+		libevdev_deactivate_external_state(&seat->base, &seat->devices_list);
+
+		wl_list_for_each_safe(device, next, &seat->devices_list, link)
+			libevdev_device_destroy(device);
 	}
 }
 
@@ -327,10 +339,10 @@ static void
 drm_led_update(struct weston_seat *seat_base, enum weston_led leds)
 {
 	struct udev_seat *seat = (struct udev_seat *) seat_base;
-	struct evdev_device *device;
+	struct libevdev_device *device;
 
 	wl_list_for_each(device, &seat->devices_list, link)
-		evdev_led_update(device, leds);
+		libevdev_led_update(device, leds);
 }
 
 static struct udev_seat *
