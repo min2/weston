@@ -404,7 +404,7 @@ libevdev_set_fd(struct libevdev* dev, int fd)
 	 */
 
 out:
-	return rc ? -errno : 0;
+	return rc < 0 ? -errno : 0;
 }
 
 LIBEVDEV_EXPORT int
