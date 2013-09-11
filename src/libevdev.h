@@ -203,7 +203,7 @@ extern "C" {
  *
  * dev = libevdev_new();
  * if (!dev)
- *         return ENOSPC;
+ *         return ENOMEM;
  *
  * err = libevdev_set_fd(dev, fd);
  * if (err < 0) {
@@ -442,28 +442,58 @@ void libevdev_external_key_values_deactivate(struct libevdev *dev);
  */
 void libevdev_free(struct libevdev *dev);
 
+enum libevdev_log_priority {
+	LIBEVDEV_LOG_ERROR = 10,	/** cricitical errors and application bugs */
+	LIBEVDEV_LOG_INFO  = 20,	/** informational messages */
+	LIBEVDEV_LOG_DEBUG = 30,	/** debug information */
+};
+
 /**
  * Logging function called by library-internal logging.
  * This function is expected to treat its input like printf would.
  *
+ * @param priority Log priority of this message
+ * @param data User-supplied data pointer (see libevdev_set_log_function())
+ * @param file libevdev source code file generating this message
+ * @param line libevdev source code line generating this message
+ * @param func libevdev source code function generating this message
  * @param format printf-style format string
  * @param args List of arguments
  *
- * @see libevdev_set_log_handler
+ * @see libevdev_set_log_function
  */
-typedef void (*libevdev_log_func_t)(const char *format, va_list args);
+typedef void (*libevdev_log_func_t)(enum libevdev_log_priority priority,
+				    void *data,
+				    const char *file, int line,
+				    const char *func,
+				    const char *format, va_list args);
 
 /**
  * Set a printf-style logging handler for library-internal logging. The default
- * logging function is a noop.
+ * logging function is to stdout.
  *
- * @param dev The evdev device
  * @param logfunc The logging function for this device. If NULL, the current
- * logging function is unset.
+ * logging function is unset and no logging is performed.
+ * @param data User-specific data passed to the log handler.
  *
  * @note This function may be called before libevdev_set_fd().
  */
-void libevdev_set_log_handler(struct libevdev *dev, libevdev_log_func_t logfunc);
+void libevdev_set_log_function(libevdev_log_func_t logfunc, void *data);
+
+/**
+ * Define the minimum level to be printed to the log handler.
+ * Messages higher than this level are printed, others are discarded. This
+ * is a global setting and applies to any future logging messages.
+ *
+ * @param priority Minimum priority to be printed to the log.
+ *
+ */
+void libevdev_set_log_priority(enum libevdev_log_priority priority);
+
+/**
+ * @return the current log level
+ */
+enum libevdev_log_priority libevdev_get_log_priority(void);
 
 
 enum libevdev_grab_mode {
@@ -1318,7 +1348,7 @@ int libevdev_kernel_set_led_values(struct libevdev *dev, ...);
  * @return 1 if the event type matches the given type, 0 otherwise (or if
  * type is invalid)
  */
-int libevdev_is_event_type(const struct input_event *ev, unsigned int type);
+int libevdev_event_is_type(const struct input_event *ev, unsigned int type);
 
 /**
  * @ingroup misc
@@ -1343,7 +1373,7 @@ int libevdev_is_event_type(const struct input_event *ev, unsigned int type);
  * @return 1 if the event type matches the given type and code, 0 otherwise
  * (or if type/code are invalid)
  */
-int libevdev_is_event_code(const struct input_event *ev, unsigned int type, unsigned int code);
+int libevdev_event_is_code(const struct input_event *ev, unsigned int type, unsigned int code);
 
 /**
  * @ingroup misc
@@ -1356,7 +1386,7 @@ int libevdev_is_event_code(const struct input_event *ev, unsigned int type, unsi
  * @note The list of names is compiled into libevdev. If the kernel adds new
  * defines for new properties libevdev will not automatically pick these up.
  */
-const char * libevdev_get_event_type_name(unsigned int type);
+const char * libevdev_event_type_get_name(unsigned int type);
 /**
  * @ingroup misc
  *
@@ -1369,7 +1399,7 @@ const char * libevdev_get_event_type_name(unsigned int type);
  * @note The list of names is compiled into libevdev. If the kernel adds new
  * defines for new properties libevdev will not automatically pick these up.
  */
-const char * libevdev_get_event_code_name(unsigned int type, unsigned int code);
+const char * libevdev_event_code_get_name(unsigned int type, unsigned int code);
 
 /**
  * @ingroup misc
@@ -1382,9 +1412,9 @@ const char * libevdev_get_event_code_name(unsigned int type, unsigned int code);
  * @note The list of names is compiled into libevdev. If the kernel adds new
  * defines for new properties libevdev will not automatically pick these up.
  * @note On older kernels input properties may not be defined and
- * libevdev_get_input_prop_name() will always return NULL
+ * libevdev_property_get_name() will always return NULL
  */
-const char* libevdev_get_property_name(unsigned int prop);
+const char* libevdev_property_get_name(unsigned int prop);
 
 /**
  * @ingroup misc
@@ -1398,7 +1428,7 @@ const char* libevdev_get_property_name(unsigned int prop);
  * @note The max value is compiled into libevdev. If the kernel changes the
  * max value, libevdev will not automatically pick these up.
  */
-int libevdev_get_event_type_max(unsigned int type);
+int libevdev_event_type_get_max(unsigned int type);
 
 /**
  * @ingroup bits
@@ -1426,6 +1456,26 @@ int libevdev_get_repeat(struct libevdev *dev, int *delay, int *period);
 /* replacement: libevdev_kernel_set_abs_info */
 int libevdev_kernel_set_abs_value(struct libevdev *dev, unsigned int code, const struct input_absinfo *abs) LIBEVDEV_DEPRECATED;
 
+
+/* replacement: libevdev_set_log_function */
+void libevdev_set_log_handler(struct libevdev *dev, libevdev_log_func_t logfunc) LIBEVDEV_DEPRECATED;
+
+/** replacement: libevdev_event_type_get_max */
+int libevdev_get_event_type_max(unsigned int type) LIBEVDEV_DEPRECATED;
+
+/** replacement: libevdev_property_get_name */
+const char* libevdev_get_property_name(unsigned int prop);
+
+/** replacement: libevdev_event_type_get_name */
+const char * libevdev_get_event_type_name(unsigned int type) LIBEVDEV_DEPRECATED;
+/** replacement: libevdev_event_code_get_name */
+const char * libevdev_get_event_code_name(unsigned int type, unsigned int code) LIBEVDEV_DEPRECATED;
+
+/** replacement: libevdev_event_is_type */
+int libevdev_is_event_type(const struct input_event *ev, unsigned int type);
+
+/** replacement: libevdev_event_is_code */
+int libevdev_is_event_code(const struct input_event *ev, unsigned int type, unsigned int code);
 /**************************************/
 
 #ifdef __cplusplus
