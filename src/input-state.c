@@ -48,11 +48,11 @@ int state_keyboard_keys_activate(void *external, unsigned long int *bit_id, unsi
 	struct weston_keyboard_keys_state *keyboard = external;
 	unsigned long flag = 1;
 
-/*
+
 	weston_log("Activating %p %lu \n", keyboard, keyboard->used_bit_ids);
+/*
 	dump_keyz(keyboard);
 */
-
 	do {
 		if (0 == (flag & keyboard->used_bit_ids))
 			break;
@@ -162,7 +162,8 @@ state_keyboard_keys_internal(struct weston_keyboard_keys_state *keyboard,
 				uint32_t key, enum wl_keyboard_key_state state)
 {
 	const int ok = 0;
-	const int err = -1;
+	const int err_filter = -1;
+	const int err_nofilter = -1;
 
 	uint32_t *k;
 	unsigned long *k_where = keyboard->keys_where.data;
@@ -184,7 +185,7 @@ state_keyboard_keys_internal(struct weston_keyboard_keys_state *keyboard,
 		state_keyboard_keys_push(keyboard, bit_id, key);
 		return ok;
 	} else {
-		return err;
+		return err_filter;
 	}
 found:
 	if (likely(state == WL_KEYBOARD_KEY_STATE_RELEASED)) {
@@ -193,31 +194,13 @@ found:
 			return ok;
 		} else {
 			*k_where = ~bit_id & *k_where;
-			return err;
+			return err_filter;
 		}
 	} else {
 		*k_where |= bit_id;
-		return err;
+		return err_filter;
 	}
 }
-
-int state_keyboard_keys_get_set(void *external, unsigned long bit_id, unsigned int id,
-				uint32_t key)
-{
-	struct weston_keyboard_keys_state *keyboard = external;
-	return state_keyboard_keys_internal(keyboard, bit_id, key,
-						WL_KEYBOARD_KEY_STATE_PRESSED);
-}
-
-int
-state_keyboard_keys_get_reset(void *external, unsigned long bit_id,
-				unsigned int id, uint32_t key)
-{
-	struct weston_keyboard_keys_state *keyboard = external;
-	return state_keyboard_keys_internal(keyboard, bit_id, key,
-						WL_KEYBOARD_KEY_STATE_RELEASED);
-}
-
 
 int
 state_keyboard_keys_get_update(void *external, unsigned long bit_id, unsigned int id,
@@ -231,31 +214,6 @@ state_keyboard_keys_get_update(void *external, unsigned long bit_id, unsigned in
 		weston_log("KEYERR %u %u\n", key, val);
 */
 	return r;
-}
-
-void
-state_keyboard_keys_set(void *external, unsigned long bit_id, unsigned int id,
-			uint32_t key)
-{
-	struct weston_keyboard_keys_state *keyboard = external;
-	state_keyboard_keys_internal(keyboard, bit_id, key,
-					WL_KEYBOARD_KEY_STATE_PRESSED);
-}
-
-void state_keyboard_keys_reset(void *external, unsigned long bit_id, unsigned int id,
-				uint32_t key)
-{
-	struct weston_keyboard_keys_state *keyboard = external;
-	state_keyboard_keys_internal(keyboard, bit_id, key,
-					WL_KEYBOARD_KEY_STATE_RELEASED);
-}
-
-
-void state_keyboard_keys_update(void *external, unsigned long bit_id, unsigned int id,
-				uint32_t key, int val)
-{
-	struct weston_keyboard_keys_state *keyboard = external;
-	state_keyboard_keys_internal(keyboard, bit_id, key, val);
 }
 
 #ifndef LONG_BITS
@@ -283,10 +241,6 @@ void state_keyboard_keys_sync(void *external, unsigned long bit_id, unsigned int
 	unsigned long *bufi;
 	uint32_t key;
 
-
-/*
-	weston_log("Syncing %p\n", keyboard);
-*/
 	/* first we check how changed the status of our keys */
 	weston_array_for_each_reverse(k, &keyboard->keys) {
 
@@ -329,85 +283,5 @@ void state_keyboard_keys_sync(void *external, unsigned long bit_id, unsigned int
 
 	free(buf);
 
-/*
-	dump_keyz(keyboard);
-	weston_log("Synced \n");
-*/
 }
-
-/*
-void state_buttons_init(struct weston_buttons_state *buttons)
-{
-	wl_array_init(&buttons->b_where);
-	buttons->used_bit_ids = 0;
-	buttons->mask = 0;
-	buttons->key = 0;
-}
-
-void state_buttons_release(struct weston_buttons_state *buttons)
-{
-	assert(buttons->used_bit_ids == 0);
-}
-
-static int inline
-state_buttons_internal(struct weston_buttons_state *buttons,
-			unsigned long bit_id,
-			uint32_t key, int state)
-{
-	const int err_multi_release = -1;
-	const int err_multi_press = 0;
-	const int ok_release = 0;
-	const int ok_press = -1;
-	unsigned long *bit;
-	unsigned long tmp;
-	int offset;
-
-	if (unlikely(buttons->mask = 0)) {
-		bit = wl_array_add(&buttons->b_where, 2 * sizeof *bit);
-		bit[0] = 0;
-		bit[1] = 0;
-		buttons->mask = 1;
-		buttons->key = key | buttons->mask;
-	}
-
-	while (unlikely((key | buttons->mask) != buttons->key)) {
-		unsigned int btns_cnt = (buttons->mask ^ (buttons->mask >> 1));
-		bit = wl_array_add(&buttons->b_where,
-			btns_cnt * sizeof *bit);
-		memset(bit, 0, btns_cnt * sizeof *bit);
-		buttons->mask <<= 1;
-		buttons->mask |= 1;
-		buttons->key = key | buttons->mask;
-	}
-
-	offset = key & buttons->mask;
-
-	bit = &buttons->buttons_where.data[offset];
-
-	if (state == 1) {
-		tmp = *bit;
-		*bit |= bit_id;
-		if (unlikely(tmp))
-			return err_multi_press;
-		else
-			return ok_press;
-	} else {
-		if (likely(*bit == bit_id)) {
-			*bit = 0;
-			return ok_release;
-		} else {
-			*bit &= ~bit_id;
-			return err_multi_release;
-		}
-	}
-}
-*/
-/*
-TODO:
-* ta struktura
-  - v rpi je to inak -> dat strukturu do struktury
-*/
-
-
-
 

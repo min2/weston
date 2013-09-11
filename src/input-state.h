@@ -32,15 +32,9 @@ dump_keyz(struct weston_keyboard_keys_state *keyboard);
 void state_keyboard_keys_init(struct weston_keyboard_keys_state *keyboard);
 void state_keyboard_keys_release(struct weston_keyboard_keys_state *keyboard);
 
-WL_EXPORT int state_keyboard_keys_get_reset(void *external, unsigned long id_bit, unsigned int id, uint32_t key);
-WL_EXPORT int state_keyboard_keys_get_set(void *external, unsigned long id_bit, unsigned int id, uint32_t key);
 WL_EXPORT int state_keyboard_keys_get_update(void *external, unsigned long id_bit, unsigned int id, uint32_t key, int val);
 
 WL_EXPORT int state_keyboard_keys_get(void *external, unsigned long id_bit, unsigned int id, uint32_t key);
-
-WL_EXPORT void state_keyboard_keys_reset(void *external, unsigned long id_bit, unsigned int id, uint32_t key);
-WL_EXPORT void state_keyboard_keys_set(void *external, unsigned long id_bit, unsigned int id, uint32_t key);
-WL_EXPORT void state_keyboard_keys_update(void *external, unsigned long id_bit, unsigned int id, uint32_t key, int val);
 
 WL_EXPORT void state_keyboard_keys_sync(void *external, unsigned long bit_id, unsigned int id, unsigned long *buf, unsigned long *buf_end, void *ptr, void (*callback)(void *ptr, int key, int val));
 

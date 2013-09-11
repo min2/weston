@@ -141,13 +141,4 @@ libevdev_device_destroy(struct libevdev_device *device);
 void
 evdev_notify_keyboard_focus(struct weston_seat *seat);
 
-int
-libevdev_activate_external_state(struct weston_seat *seat,
-				 struct wl_list *evdev_devices);
-void
-libevdev_deactivate_external_state(struct weston_seat *seat,
-				 struct wl_list *evdev_devices);
-void
-evdev_init_keyboard_state(struct weston_seat *seat,
-			  struct wl_list *evdev_devices);
 #endif /* EVDEV_H */

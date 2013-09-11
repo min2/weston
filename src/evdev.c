@@ -37,13 +37,13 @@
 #define DEFAULT_AXIS_STEP_DISTANCE wl_fixed_from_int(10)
 
 struct libevdev_external_key_values_interface input_state_interface = {
-	&state_keyboard_keys_get_reset,
-	&state_keyboard_keys_get_set,
+	NULL,
+	NULL,
 	&state_keyboard_keys_get_update,
 	&state_keyboard_keys_get,
-	&state_keyboard_keys_reset,
-	&state_keyboard_keys_set,
-	&state_keyboard_keys_update,
+	NULL,
+	NULL,
+	NULL,
 	&state_keyboard_keys_sync,
 	&state_keyboard_keys_deactivate,
 	&state_keyboard_keys_activate
@@ -660,11 +660,17 @@ libevdev_device_create(struct weston_seat *seat, const char *path, int device_fd
 	if (device == NULL)
 		return NULL;
 
-	if (libevdev_new_from_fd(device_fd, &dev) < 0) {
-		fprintf(stderr, "Failed to init libevdev\n");
-		free(device);
+	dev = libevdev_new();
+
+	if (dev == NULL)
 		return NULL;
-	}
+
+	weston_seat_init_pointer(seat);
+
+	if (weston_seat_init_keyboard(seat, NULL) < 0)
+		return -1;
+
+	weston_seat_init_touch(seat);
 
 	device->device = evdev_device_create(seat, path, device_fd);
 
@@ -692,6 +698,16 @@ libevdev_device_create(struct weston_seat *seat, const char *path, int device_fd
 
 	device->dev = dev;
 
+	libevdev_external_key_values_activate(device->dev,
+						&input_state_interface,
+						&seat->keyboard->keys);
+
+	if (libevdev_set_fd(dev, device_fd) < 0) {
+		fprintf(stderr, "Failed to init libevdev\n");
+		free(device);
+		return NULL;
+	}
+
 	return device;
 }
 
@@ -699,75 +715,11 @@ libevdev_device_create(struct weston_seat *seat, const char *path, int device_fd
 void
 libevdev_device_destroy(struct libevdev_device *device)
 {
+	libevdev_external_key_values_deactivate(device->dev);
 	wl_list_remove(&device->link);
 	evdev_device_destroy(device->device);
 	libevdev_free(device->dev); 	
 	free(device);
-}
-
-#include "input-state.h"
-
-int
-libevdev_activate_external_state(struct weston_seat *seat,
-				 struct wl_list *evdev_devices)
-{
-	struct libevdev_device *device;
-
-	weston_seat_init_pointer(seat);
-
-	if (weston_seat_init_keyboard(seat, NULL) < 0)
-		return -1;
-
-	weston_seat_init_touch(seat);
-
-	wl_list_for_each(device, evdev_devices, link) {
-		/* here we somehow decide what kind of key state is suitable */
-/*
-		weston_log("libevdev_activate_external_state seat=%p kbd %p\n", seat, seat->keyboard);
-*/
-
-		libevdev_external_key_values_activate(device->dev,
-							&input_state_interface,
-							&seat->keyboard->keys);
-
-	}
-	return 0;
-}
-
-
-void
-libevdev_deactivate_external_state(struct weston_seat *seat,
-				 struct wl_list *evdev_devices)
-{
-	struct libevdev_device *device;
-
-	wl_list_for_each(device, evdev_devices, link) {
-		/* here we somehow decide what kind of key state is suitable */
-/*
-		weston_log("libevdev_activate_external_state seat=%p kbd %p\n", seat, seat->keyboard);
-*/
-		libevdev_external_key_values_deactivate(device->dev);
-
-	}
-}
-
-
-void
-evdev_init_keyboard_state(struct weston_seat *seat,
-			  struct wl_list *evdev_devices)
-{
-	struct libevdev_device *device;
-
-	if (!seat->keyboard)
-		return;
-
-	wl_list_for_each(device, evdev_devices, link) {
-/*
-		weston_log("evdev_init_keyboard_state kbd %p\n", seat->keyboard);
-*/
-		if (libevdev_has_event_type(device->dev, EV_KEY))
-			libevdev_sync_key_state(device->dev);
-	}
 }
 
 void

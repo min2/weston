@@ -165,14 +165,6 @@ udev_input_add_devices(struct udev_input *input, struct udev *udev)
 	udev_enumerate_unref(e);
 
 	wl_list_for_each(seat, &input->compositor->seat_list, base.link) {
-		libevdev_activate_external_state(&seat->base, &seat->devices_list);
-	}
-
-	wl_list_for_each(seat, &input->compositor->seat_list, base.link) {
-		evdev_init_keyboard_state(&seat->base, &seat->devices_list);
-	}
-
-	wl_list_for_each(seat, &input->compositor->seat_list, base.link) {
 		evdev_notify_keyboard_focus(&seat->base);
 
 		if (!wl_list_empty(&seat->devices_list))
@@ -286,8 +278,9 @@ udev_input_remove_devices(struct udev_input *input)
 	}
 
 	wl_list_for_each(seat, &input->compositor->seat_list, base.link) {
+/*
 		libevdev_deactivate_external_state(&seat->base, &seat->devices_list);
-
+*/
 		wl_list_for_each_safe(device, next, &seat->devices_list, link)
 			libevdev_device_destroy(device);
 	}

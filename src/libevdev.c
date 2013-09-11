@@ -35,111 +35,56 @@
 
 #define MAXEVENTS 64
 
-static int sync_mt_state(struct libevdev *dev, int create_events);
+static inline void
+init_event(struct libevdev *dev, struct input_event *ev, int type, int code, int value)
+{
+	ev->time = dev->last_event_time;
+	ev->type = type;
+	ev->code = code;
+	ev->value = value;
+}
+
+static void custom_callback(void *ptr, int key, int val)
+{
+	int emit_fake_events = ptr != NULL;
+	if (emit_fake_events) {
+		struct libevdev *dev = ptr;
+		struct input_event *ev = queue_push(dev);
+		init_event(dev, ev, EV_KEY, key, val ? 1 : 0);
+	}
+}
 
 static int
-init_event_queue(struct libevdev *dev)
+sync_external_key_state(struct libevdev *dev, int emit_fake_events)
 {
-	/* FIXME: count the number of axes, keys, etc. to get a better idea at how many events per
-	   EV_SYN we could possibly get. Then multiply that by the actual buffer size we care about */
-
-	const int QUEUE_SIZE = 256;
-
-	return queue_alloc(dev, QUEUE_SIZE);
-}
-
-static void
-_libevdev_log(struct libevdev *dev, const char *format, ...)
-{
-	va_list args;
-
-	va_start(args, format);
-	dev->log(format, args);
-	va_end(args);
-}
-
-static void
-libevdev_noop_log_func(const char *format, va_list args)
-{
-}
-
-LIBEVDEV_EXPORT struct libevdev*
-libevdev_new(void)
-{
-	struct libevdev *dev;
-
-	dev = calloc(1, sizeof(*dev));
-	if (!dev)
-		return NULL;
-	dev->fd = -1;
-	dev->num_slots = -1;
-	dev->current_slot = -1;
-	dev->log = libevdev_noop_log_func;
-	dev->grabbed = LIBEVDEV_UNGRAB;
-	dev->sync_state = SYNC_NONE;
-
-	dev->external_key_values = NULL;
-	dev->interface = NULL;
-	dev->key_values_bit_id = 0;
-	dev->key_values_id = 0;
-
-	return dev;
-}
-
-LIBEVDEV_EXPORT int
-libevdev_new_from_fd(int fd, struct libevdev **dev)
-{
-	struct libevdev *d;
 	int rc;
+	const int s = ((KEY_CNT + 7) / 8);
+	unsigned long *keystate = malloc(s);
+	void *ptr = emit_fake_events ? (void *) dev : NULL;
 
-	d = libevdev_new();
-	if (!d)
-		return -ENOSPC;
-
-	rc = libevdev_set_fd(d, fd);
-	if (rc < 0)
-		libevdev_free(d);
-	else
-		*dev = d;
-	return rc;
-}
-
-int libevdev_external_key_values_activate(
-	struct libevdev *dev,
-	struct libevdev_external_key_values_interface *interface,
-	void *external_structure
-)
-{
-	if (dev->external_key_values != NULL)
-		return -2;
-
-	dev->interface = interface;
-	dev->external_key_values = external_structure;
-
-	if (interface->activate(dev->external_key_values,
-				&dev->key_values_bit_id, &dev->key_values_id))
+	if (keystate == NULL)
 		return -1;
 
-	return 0;
-}
+	rc = ioctl(dev->fd, EVIOCGKEY(s), keystate);
+	if (rc < 0)
+		goto out;
 
-void libevdev_external_key_values_deactivate(struct libevdev *dev)
-{
-	dev->interface->deactivate(dev->external_key_values,
-				   dev->key_values_bit_id, dev->key_values_id);
-	dev->interface = NULL;
-	dev->external_key_values = NULL;
-	dev->key_values_bit_id = 0;
-	dev->key_values_id = 0;
-}
+	dev->interface->sync(dev->external_key_values,
+			dev->key_values_bit_id, dev->key_values_id,
+			&keystate[0], &keystate[NLONGS(KEY_MAX)],
+			ptr, &custom_callback);
 
+	rc = 0;
+out:
+	return rc ? -errno : 0;
+}
 
 static int bitmap_keyboard_keys_get_update(void *external, unsigned long bit_id, unsigned int id, uint32_t key, int val)
 {
 	struct libevdev_keys_bitmap *bmp = external;
 	int i = bit_is_set(bmp->key_values, key);
 	set_bit_state(bmp->key_values, key, val);
-	return i;
+	return -(i == val);
 }
 
 static int bitmap_keyboard_keys_get(void *external, unsigned long bit_id, unsigned int id, uint32_t key)
@@ -191,6 +136,139 @@ struct libevdev_external_key_values_interface bitmap_state_interface = {
 	&bitmap_keyboard_keys_activate
 };
 
+static int sync_mt_state(struct libevdev *dev, int create_events);
+
+static int
+init_event_queue(struct libevdev *dev)
+{
+	/* FIXME: count the number of axes, keys, etc. to get a better idea at how many events per
+	   EV_SYN we could possibly get. Then multiply that by the actual buffer size we care about */
+
+	const int QUEUE_SIZE = 256;
+
+	return queue_alloc(dev, QUEUE_SIZE);
+}
+
+static void
+_libevdev_log(struct libevdev *dev, const char *format, ...)
+{
+	va_list args;
+
+	va_start(args, format);
+	dev->log(format, args);
+	va_end(args);
+}
+
+static void
+libevdev_noop_log_func(const char *format, va_list args)
+{
+}
+
+LIBEVDEV_EXPORT struct libevdev*
+libevdev_new(void)
+{
+	struct libevdev *dev;
+
+	dev = calloc(1, sizeof(*dev));
+	if (!dev)
+		return NULL;
+	dev->fd = -1;
+	dev->num_slots = -1;
+	dev->current_slot = -1;
+	dev->log = libevdev_noop_log_func;
+	dev->grabbed = LIBEVDEV_UNGRAB;
+	dev->sync_state = SYNC_NONE;
+
+	dev->external_key_values = NULL;
+	dev->interface = NULL;
+	dev->key_values_bit_id = 0;
+	dev->key_values_id = 0;
+
+	return dev;
+}
+
+static int
+libevdev_init_legacy_bitmap_keys(struct libevdev* dev, int fd)
+{
+	size_t s = (KEY_CNT + 7) / 8;
+	unsigned long *buf;
+
+	if ((dev->interface == NULL) && (dev->external_key_values == NULL)) {
+		buf = calloc(1, s);
+
+		if (buf != NULL) {
+			struct libevdev_keys_bitmap *wrapper =
+				malloc(sizeof(struct libevdev_keys_bitmap));
+			if (wrapper != NULL) {
+				wrapper->key_values = buf;
+
+				if (libevdev_external_key_values_activate(dev,
+					&bitmap_state_interface, wrapper))
+					return -2;
+
+				if (libevdev_has_event_type(dev, EV_KEY))
+					sync_external_key_state(dev, 0);
+
+			} else {
+				free(buf);
+				return -1;
+			}
+		}
+	}
+
+
+	return 0;
+}
+
+LIBEVDEV_EXPORT int
+libevdev_new_from_fd(int fd, struct libevdev **dev)
+{
+	struct libevdev *d;
+	int rc;
+
+	d = libevdev_new();
+	if (!d)
+		return -ENOSPC;
+
+	libevdev_init_legacy_bitmap_keys(d, fd);
+
+	rc = libevdev_set_fd(d, fd);
+	if (rc < 0)
+		libevdev_free(d);
+	else
+		*dev = d;
+	return rc;
+}
+
+int libevdev_external_key_values_activate(
+	struct libevdev *dev,
+	struct libevdev_external_key_values_interface *interface,
+	void *external_structure
+)
+{
+	if (dev->external_key_values != NULL)
+		return -2;
+
+	dev->interface = interface;
+	dev->external_key_values = external_structure;
+
+	if (interface->activate(dev->external_key_values,
+				&dev->key_values_bit_id, &dev->key_values_id))
+		return -1;
+
+	return 0;
+}
+
+void libevdev_external_key_values_deactivate(struct libevdev *dev)
+{
+	dev->interface->deactivate(dev->external_key_values,
+				   dev->key_values_bit_id, dev->key_values_id);
+	dev->interface = NULL;
+	dev->external_key_values = NULL;
+	dev->key_values_bit_id = 0;
+	dev->key_values_id = 0;
+}
+
 LIBEVDEV_EXPORT void
 libevdev_free(struct libevdev *dev)
 {
@@ -198,9 +276,10 @@ libevdev_free(struct libevdev *dev)
 		return;
 
 	if (dev->interface == &bitmap_state_interface) {
+
 		struct libevdev_keys_bitmap *wrapper =
 						(struct libevdev_keys_bitmap *)
-						dev->key_values_bit_id;
+						dev->external_key_values;
 		free(wrapper->key_values);
 		free(wrapper);
 	}
@@ -236,6 +315,8 @@ libevdev_set_fd(struct libevdev* dev, int fd)
 	int rc;
 	int i;
 	char buf[256];
+
+	libevdev_init_legacy_bitmap_keys(dev, fd);
 
 	if (dev->fd != -1)
 		return -EBADF;
@@ -373,31 +454,6 @@ libevdev_set_fd(struct libevdev* dev, int fd)
 		return -rc;
 	}
 
-	if (dev->interface == NULL && dev->external_key_values == NULL) {
-		/* no external keys storage - initialize legacy bitmap */
-		size_t s = (KEY_CNT + 7) / 8;
-		unsigned long *buf = malloc(s);
-
-		rc = ioctl(fd, EVIOCGKEY(s), buf);
-		if (rc < 0) {
-			free(buf);
-			goto out;
-		}
-
-		if (buf != NULL) {
-
-			struct libevdev_keys_bitmap *wrapper = malloc(sizeof(struct libevdev_keys_bitmap));
-			if (wrapper != NULL) {
-				wrapper->key_values = buf;
-				libevdev_external_key_values_activate(dev,
-					&bitmap_state_interface, wrapper);
-			} else {
-				free(buf);
-			}
-		}
-	}
-
-
 	/* not copying key state because we won't know when we'll start to
 	 * use this fd and key's are likely to change state by then.
 	 * Same with the valuators, really, but they may not change.
@@ -413,48 +469,10 @@ libevdev_get_fd(const struct libevdev* dev)
 	return dev->fd;
 }
 
-static inline void
-init_event(struct libevdev *dev, struct input_event *ev, int type, int code, int value)
-{
-	ev->time = dev->last_event_time;
-	ev->type = type;
-	ev->code = code;
-	ev->value = value;
-}
-
-static void custom_callback(void *ptr, int key, int val)
-{
-	int emit_fake_events = ptr != NULL;
-	if (emit_fake_events) {
-		struct libevdev *dev = ptr;
-		struct input_event *ev = queue_push(dev);
-		init_event(dev, ev, EV_KEY, key, val ? 1 : 0);
-	}
-}
-
 static int
-sync_external_key_state(struct libevdev *dev, int emit_fake_events)
+sync_key_state(struct libevdev *dev)
 {
-	int rc;
-	unsigned long *keystate = malloc((KEY_CNT + 7) / 8);
-
-	void *ptr = emit_fake_events ? (void *) dev : NULL;
-
-	if (keystate == NULL)
-		return -5;
-
-	rc = ioctl(dev->fd, EVIOCGKEY(sizeof(keystate)), keystate);
-	if (rc < 0) {
-		free(keystate);
-		return -errno;
-	}
-
-	dev->interface->sync(dev->external_key_values,
-			dev->key_values_bit_id, dev->key_values_id,
-			&keystate[0], &keystate[NLONGS(KEY_MAX)], 
-			ptr, &custom_callback);
-
-	return 0;
+	sync_external_key_state(dev, 1);
 }
 
 static int
@@ -512,13 +530,6 @@ sync_led_state(struct libevdev *dev)
 out:
 	return rc ? -errno : 0;
 }
-
-int
-libevdev_sync_key_state(struct libevdev *dev)
-{
-	return sync_external_key_state(dev, 0);
-}
-
 static int
 sync_abs_state(struct libevdev *dev)
 {
@@ -638,7 +649,7 @@ sync_state(struct libevdev *dev)
 		queue_shift_multiple(dev, i + 1, NULL);
 
 	if (libevdev_has_event_type(dev, EV_KEY))
-		rc = sync_external_key_state(dev, 1);
+		rc = sync_key_state(dev);
 	if (libevdev_has_event_type(dev, EV_LED))
 		rc = sync_led_state(dev);
 	if (libevdev_has_event_type(dev, EV_SW))
@@ -1035,7 +1046,7 @@ libevdev_set_event_value(struct libevdev *dev, unsigned int type, unsigned int c
 
 	switch(type) {
 		case EV_ABS: rc = update_abs_state(dev, &e); break;
-		case EV_KEY: rc = update_key_state(dev, &e); break;
+		case EV_KEY: rc = update_key_state(dev, &e) > 0 ? -1 : 0; break;
 		case EV_LED: rc = update_led_state(dev, &e); break;
 		case EV_SW: rc = update_sw_state(dev, &e); break;
 		default:

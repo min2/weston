@@ -317,10 +317,10 @@ void (*sync)(void *external, unsigned long bit_id, unsigned int id, unsigned lon
 	 * This destroys stored key values of the identified device inside the
 	 * external structure. After this call, the access identifiers become
 	 * invalid.
-	 * 
+	 *
 	 * An external structure may not be freed until all its activated libevdev
 	 * devices become deactivated.
-	 * 
+	 *
 	 */
 	void (*deactivate)(void *external, unsigned long int bit_id, unsigned int id);
 	/**
@@ -334,7 +334,7 @@ void (*sync)(void *external, unsigned long bit_id, unsigned int id, unsigned lon
 	 * devices may store their data in the same external structure, but each
 	 * libevdev device uses it's own pair of identifiers to do so. These ids
 	 * are used by the external structure's methods to distinguish the callers.
-	 * 
+	 *
 	 * Return values
 	 * Success: 0
 	 * Failure: -1
@@ -1415,18 +1415,6 @@ int libevdev_get_event_type_max(unsigned int type);
  */
 int libevdev_get_repeat(struct libevdev *dev, int *delay, int *period);
 
-/**
- * @ingroup whatever
- *
- * whatever.
- *
- * @param dev whatever
- *
- * @return 0 on success, -1 if this device does not have repeat settings.
- *
- * @note whatever
- */
-int libevdev_sync_key_state(struct libevdev *dev);
 
 /********* DEPRECATED SECTION *********/
 #if defined(__GNUC__) && __GNUC__ >= 4
